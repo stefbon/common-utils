@@ -171,7 +171,7 @@ static void _fs_unlink(struct service_context_s *context, struct fuse_request_s 
     reply_VFS_error(request, EACCES);
 }
 
-static void _fs_rename(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, const char *name, struct inode_s *inode_new, const char *newname)
+static void _fs_rename(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, const char *name, struct inode_s *inode_new, const char *newname, unsigned int flags)
 {
     reply_VFS_error(request, EACCES);
 }
@@ -226,7 +226,7 @@ static void _fs_flock(struct fuse_openfile_s *openfile, struct fuse_request_s *r
     reply_VFS_error(request, 0);
 }
 
-static void _fs_create(struct fuse_openfile_s *openfile, struct fuse_request_s *request, const char *name, unsigned int flags, mode_t mode, mode_t mask)
+static void _fs_create(struct fuse_openfile_s *openfile, struct fuse_request_s *request, const char *name, unsigned int len, unsigned int flags, mode_t mode, mode_t mask)
 {
     openfile->error=EACCES;
     reply_VFS_error(request, EACCES);

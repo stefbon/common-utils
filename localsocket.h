@@ -73,7 +73,7 @@ int create_socket_path(struct pathinfo_s *pathinfo);
 int check_socket_path(struct pathinfo_s *pathinfo, unsigned int already);
 
 void init_connection(struct fs_connection_s *connection, unsigned char type);
-int create_local_serversocket(char *path, struct fs_connection_s *conn, struct beventloop_s *loop, struct fs_connection_s *(* accept_cb)(uid_t uid, gid_t gid, pid_t pid, void *ptr), unsigned int *error);
+int create_local_serversocket(char *path, struct fs_connection_s *conn, struct beventloop_s *loop, struct fs_connection_s *(* accept_cb)(uid_t uid, gid_t gid, pid_t pid, struct fs_connection_s *s_conn), unsigned int *error);
 
 struct fs_connection_s *get_containing_connection(struct list_element_s	*list);
 struct fs_connection_s *get_next_connection(struct fs_connection_s *s_conn, struct fs_connection_s *c_conn);

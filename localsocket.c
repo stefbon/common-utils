@@ -245,7 +245,7 @@ static int accept_local_connection(int sfd, void *data, uint32_t events)
 
 }
 
-int create_local_serversocket(char *path, struct fs_connection_s *conn, struct beventloop_s *loop, struct fs_connection_s *(* accept_cb)(uid_t uid, gid_t gid, pid_t pid, void *ptr), unsigned int *error)
+int create_local_serversocket(char *path, struct fs_connection_s *conn, struct beventloop_s *loop, struct fs_connection_s *(* accept_cb)(uid_t uid, gid_t gid, pid_t pid, struct fs_connection_s *s_conn), unsigned int *error)
 {
     int result=-1;
     int fd=0;

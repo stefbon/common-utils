@@ -128,7 +128,7 @@ static void process_job(void *threadarg)
     queue=thread->queue;
     thread->threadid=pthread_self();
 
-    logoutput("process_job: started %li/%i", (unsigned long) thread->threadid, gettid());
+    logoutput("process_job: started %i", gettid());
 
     /* thread can be cancelled any time */
 
