@@ -70,12 +70,8 @@ static pthread_mutex_t done_mutex=PTHREAD_MUTEX_INITIALIZER;
 
 static unsigned char service_fs_count(struct inode_s *inode)
 {
-    // union datalink_u *link=NULL;
     logoutput("service_fs_count");
     return 1;
-    // link=get_datalink(inode);
-    // struct service_context_s *context=(struct service_context_s *) link->data;
-    // return context->fscount;
 }
 
 static void service_fs_forget(struct inode_s *inode)
@@ -141,15 +137,7 @@ static void service_fs_lookup(struct service_context_s *context, struct fuse_req
 
     } else {
 
-	// if (strcmp(name, ".directory")==0) {
-
-	    // special_file_lookup(context, pinode->alias, request);
-
-	// } else {
-
-	    (* context->fs->lookup_new)(context, request, pinode, &xname, &pathinfo);
-
-	//}
+	(* context->fs->lookup_new)(context, request, pinode, &xname, &pathinfo);
 
     }
 
