@@ -119,15 +119,15 @@ static void service_fs_lookup(struct service_context_s *context, struct fuse_req
 
     } else {
 
-	if (strcmp(name, ".directory")==0) {
+	//if (strcmp(name, ".directory")==0) {
 
-	    reply_VFS_error(request, ENOENT);
+	//    reply_VFS_error(request, ENOENT);
 
-	} else {
+	//} else {
 
 	    (* fpath.context->fs->lookup_new)(fpath.context, request, pinode, &xname, &pathinfo);
 
-	}
+	//}
 
     }
 
