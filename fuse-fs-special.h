@@ -20,10 +20,6 @@
 #define FUSE_FUSE_SPECIAL_H
 
 void init_special_fs();
-
 void create_desktopentry_file(char *path, struct entry_s *parent, struct workspace_mount_s *workspace);
-void special_file_lookup(struct service_context_s *context, struct entry_s *parent, struct fuse_request_s *request);
-
-void remove_special_files();
 
 #endif
