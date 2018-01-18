@@ -72,8 +72,6 @@ const char *rootpath="/";
 const char *dotdotname="..";
 const char *dotname=".";
 
-extern void special_file_lookup(struct service_context_s *context, struct entry_s *parent, struct fuse_request_s *request);
-
 /*
     check an user has access to a path
     do this by changing the fs uid/gid to those of the user,
@@ -302,15 +300,7 @@ void _fs_common_virtual_lookup(struct service_context_s *context, struct fuse_re
 
     } else {
 
-	if (strcmp(name, ".directory")==0) {
-
-	    special_file_lookup(context, parent, request);
-
-	} else {
-
-	    reply_VFS_error(request, ENOENT);
-
-	}
+	reply_VFS_error(request, ENOENT);
 
     }
 
