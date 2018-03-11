@@ -25,6 +25,11 @@ struct list_element_s {
     struct list_element_s *prev;
 };
 
+struct list_header_s {
+    struct list_element_s *head;
+    struct list_element_s *tail;
+};
+
 void add_list_element_last(struct list_element_s **head, struct list_element_s **tail, struct list_element_s *element);
 void add_list_element_first(struct list_element_s **head, struct list_element_s **tail, struct list_element_s *element);
 void add_list_element_after(struct list_element_s **head, struct list_element_s **tail, struct list_element_s *prev, struct list_element_s *element);
