@@ -578,9 +578,7 @@ static void process_fusequeue(void *data)
 
     pthread_mutex_unlock(&fuseparam->queue.mutex);
 
-    /*
-	the first bytes are the header, containing the opcode
-    */
+    /* the first bytes are the header, containing the opcode */
 
     if (index) {
 	struct fuse_request_s *request=index->request;
