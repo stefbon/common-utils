@@ -33,6 +33,8 @@ struct common_buffer_s {
     unsigned int				size;
 };
 
+#define INIT_COMMON_BUFFER		{0, NULL, NULL, 0}
+
 // Prototypes
 
 void init_common_buffer(struct common_buffer_s *c_buffer);
