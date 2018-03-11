@@ -32,6 +32,7 @@
 
 #define _FUSE_READDIR_MODE_FINISH				1
 #define _FUSE_READDIR_MODE_NONEMPTY				2
+#define _FUSE_READDIR_MODE_INCOMPLETE				4
 
 struct fuse_openfile_s {
     struct service_context_s 			*context;
