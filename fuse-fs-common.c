@@ -174,7 +174,7 @@ void _fs_common_cached_lookup(struct service_context_s *context, struct fuse_req
     uint64_t et_rounded=0;
     uint64_t at_rounded=0;
 
-    // inode->nlookup++;
+    inode->nlookup++;
 
     entry_out.nodeid=inode->ino;
     entry_out.generation=0; /* todo: add a generation field to reuse existing inodes */
@@ -295,6 +295,33 @@ void _fs_common_virtual_lookup(struct service_context_s *context, struct fuse_re
     entry=find_entry(parent, &xname, &error);
 
     if (entry && (entry->inode->nlookup>0)) {
+
+	/* it's possible that the entry represents the root of a service
+	    in that case do a lookup of the '.' on the root of the service using the service specific fs calls
+	*/
+
+	if ((* entry->inode->fs->get_count)()==1) {
+	    union datalink_u *link=get_datalink(entry->inode);
+	    struct service_context_s *service_context=(struct service_context_s *) link->data;
+
+	    if (service_context) {
+		struct pathinfo_s pathinfo=PATHINFO_INIT;
+		unsigned int pathlen=2;
+		char path[3];
+
+		path[2]='\0';
+		path[1]='.';
+		path[0]='/';
+
+		pathinfo.len=2;
+		pathinfo.path=path;
+
+		(* service_context->fs->lookup_existing)(service_context, request, entry, &pathinfo);
+		return;
+
+	    }
+
+	}
 
 	_fs_common_cached_lookup(context, request, entry->inode);
 
