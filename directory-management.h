@@ -20,6 +20,8 @@
 #ifndef FUSE_DIRECTORY_MANAGEMENT_H
 #define FUSE_DIRECTORY_MANAGEMENT_H
 
+#include "simple-locking.h"
+
 #define _DIRECTORY_FLAG_REMOVE					1
 #define _DIRECTORY_FLAG_DUMMY					2
 
@@ -40,15 +42,19 @@ struct dops_s {
     struct entry_s 			*(*find_entry)(struct entry_s *parent, struct name_s *xname, unsigned int *error);
     void 				(*remove_entry)(struct entry_s *entry, unsigned int *error);
     struct entry_s 			*(*insert_entry)(struct entry_s *entry, unsigned int *error, unsigned short flags);
-    struct directory_s			*(*create_directory)(struct inode_s *inode, unsigned int lock, unsigned int *error);
+    struct directory_s			*(*create_directory)(struct inode_s *inode, unsigned int *error);
     struct directory_s			*(*remove_directory)(struct inode_s *inode, unsigned int *error);
     struct entry_s 			*(*find_entry_batch)(struct directory_s *directory, struct name_s *xname, unsigned int *error);
     void 				(*remove_entry_batch)(struct directory_s *directory, struct entry_s *entry, unsigned int *error);
     struct entry_s 			*(*insert_entry_batch)(struct directory_s *directory, struct entry_s *entry, unsigned int *error, unsigned short flags);
-    int					(* lock_read)(struct inode_s *inode);
-    void				(* unlock_read)(struct inode_s *inode);
-    int					(* lock_excl)(struct inode_s *inode);
-    void				(* unlock_excl)(struct inode_s *inode);
+    struct simple_lock_s 		*(* create_rlock)(struct inode_s *inode);
+    struct simple_lock_s 		*(* create_wlock)(struct inode_s *inode);
+    int					(* rlock)(struct inode_s *inode, struct simple_lock_s *lock);
+    int					(* wlock)(struct inode_s *inode, struct simple_lock_s *lock);
+    int					(* lock)(struct inode_s *inode, struct simple_lock_s *lock);
+    int					(* unlock)(struct inode_s *inode, struct simple_lock_s *lock);
+    int					(* upgradelock)(struct inode_s *inode, struct simple_lock_s *lock);
+    int					(* prelock)(struct inode_s *inode, struct simple_lock_s *lock);
     struct pathcalls_s 			*(*get_pathcalls)(struct inode_s *inode);
 };
 
@@ -58,10 +64,7 @@ struct directory_s {
     struct skiplist_struct		skiplist;
     struct inode_s 			*inode;
     unsigned int			count;
-    pthread_mutex_t			mutex;
-    pthread_cond_t			cond;
-    pthread_t				write_thread;
-    unsigned int			lock;
+    struct simple_locking_s		locking;
     struct entry_s			*first;
     struct entry_s			*last;
     struct dops_s 			*dops;
@@ -70,18 +73,24 @@ struct directory_s {
 };
 
 int init_directory(struct directory_s *directory, unsigned int *error);
-struct directory_s *_create_directory(struct inode_s *inode, void (* init_cb)(struct directory_s *directory), unsigned int lock, unsigned int *error);
+struct directory_s *_create_directory(struct inode_s *inode, void (* init_cb)(struct directory_s *directory), unsigned int *error);
 struct directory_s *get_directory(struct inode_s *inode);
 void free_directory(struct directory_s *directory);
 void destroy_directory(struct directory_s *directory);
 
-int _lock_directory_read(struct directory_s *directory);
-int _lock_directory_preexcl(struct directory_s *directory);
-int _lock_directory_excl(struct directory_s *directory);
+void init_directory_readlock(struct directory_s *directory, struct simple_lock_s *lock);
+void init_directory_writelock(struct directory_s *directory, struct simple_lock_s *lock);
 
-int _unlock_directory_read(struct directory_s *directory);
-int _unlock_directory_preexcl(struct directory_s *directory);
-int _unlock_directory_excl(struct directory_s *directory);
+struct simple_lock_s *_create_rlock_directory(struct directory_s *directory);
+struct simple_lock_s *_create_wlock_directory(struct directory_s *directory);
+
+int _rlock_directory(struct directory_s *directory, struct simple_lock_s *lock);
+int _wlock_directory(struct directory_s *directory, struct simple_lock_s *lock);
+
+int _lock_directory(struct directory_s *directory, struct simple_lock_s *lock);
+int _unlock_directory(struct directory_s *directory, struct simple_lock_s *lock);
+int _upgradelock_directory(struct directory_s *directory, struct simple_lock_s *lock);
+int _prelock_directory(struct directory_s *directory, struct simple_lock_s *lock);
 
 int lock_pathcalls(struct pathcalls_s *pathcalls);
 int unlock_pathcalls(struct pathcalls_s *pathcalls);

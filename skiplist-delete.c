@@ -189,11 +189,10 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
     void *search=NULL, *found=NULL;
     struct vector_dirnode_struct vector;
     int diff=0;
-    unsigned char exclusive=0;
     unsigned int search_row=0;
+    void *ptr=NULL;
 
-    sl->ops.lock(sl, _SKIPLIST_READLOCK);
-
+    ptr=sl->ops.create_rlock(sl);
     if (sl->ops.count(sl)==0) goto unlock;
 
     init_vector(&vector);
@@ -204,10 +203,7 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
 
     // logoutput("delete_nonempty_sl");
 
-
-    /*
-	when there are fastlanes, take them first
-    */
+    /* when there are fastlanes, take them first */
 
     if (sl->dirnode) {
 	struct dirnode_struct *dirnode=sl->dirnode;
@@ -263,7 +259,7 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
 		    /* this dirnode will be deleted and it's the only one in this lane */
 		    /* try to lock the directory exclusive */
 
-		    if (sl->ops.lock(sl, _SKIPLIST_PREEXCLLOCK)==-1) {
+		    if (sl->ops.prelock(sl, ptr)==-1) {
 
 			*error=EAGAIN;
 			vector.minlevel=level+1;
@@ -273,8 +269,6 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
 			goto unlock;
 
 		    }
-
-		    exclusive=1;
 
 		}
 
@@ -455,14 +449,12 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
 
 	/* no fast lanes */
 
-	if (sl->ops.lock(sl, _SKIPLIST_PREEXCLLOCK)==-1) {
+	if (sl->ops.prelock(sl, ptr)==-1) {
 
 	    *error=EAGAIN;
 	    goto unlock;
 
 	}
-
-	exclusive=1;
 
     }
 
@@ -511,54 +503,21 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
 
     if (found && *error==0) {
 
-	if (exclusive==1) {
+	sl->ops.upgradelock(sl, ptr);
 
-	    sl->ops.lock(sl, _SKIPLIST_EXCLLOCK);
-
-	} else {
-
-	    pthread_mutex_lock(&sl->mutex);
-
-	}
-
-	/*
-	    correct the counters and eventually
-	    remove the dirnode
-	*/
+	/* correct the counters and eventually remove the dirnode */
 
 	remove_dirnodes_sl(sl, &vector, found);
 
-	/*
-	    remove from the linked list
-	*/
+	/* remove from the linked list */
 
 	sl->ops.delete(found, sl);
-
-	if (exclusive==1) {
-
-	    sl->ops.unlock(sl, _SKIPLIST_EXCLLOCK);
-	    exclusive=0;
-
-	} else {
-
-	    pthread_cond_broadcast(&sl->cond);
-	    pthread_mutex_unlock(&sl->mutex);
-
-	}
 
     }
 
     unlock:
 
-    if (exclusive==1) {
-
-	sl->ops.unlock(sl, _SKIPLIST_EXCLLOCK);
-	exclusive=0;
-
-    }
-
-    sl->ops.unlock(sl, _SKIPLIST_READLOCK);
-
+    sl->ops.unlock(sl, ptr);
     destroy_vector_lanes(&vector);
 
     if (row) *row=search_row;

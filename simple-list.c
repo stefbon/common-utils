@@ -1,6 +1,6 @@
 /*
 
-  2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017 Stef Bon <stefbon@gmail.com>
+  2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018 Stef Bon <stefbon@gmail.com>
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License
@@ -28,6 +28,9 @@
 
 #include <pthread.h>
 #include "simple-list.h"
+
+#define LOGGING
+#include "logging.h"
 
 void add_list_element_last(struct list_element_s **head, struct list_element_s **tail, struct list_element_s *element)
 {
@@ -176,3 +179,32 @@ struct list_element_s *get_list_head(struct list_element_s **head, struct list_e
     return element;
 }
 
+struct list_element_s *search_list_element_forw(struct list_element_s *head, struct list_element_s *tail, int (* condition)(struct list_element_s *list, void *ptr), void *ptr)
+{
+    struct list_element_s *element=head;
+
+    while(element) {
+
+	if (condition(element, ptr)==0) break;
+	element=element->next;
+
+    }
+
+    return element;
+
+}
+
+struct list_element_s *search_list_element_back(struct list_element_s *head, struct list_element_s *tail, int (* condition)(struct list_element_s *list, void *ptr), void *ptr)
+{
+    struct list_element_s *element=tail;
+
+    while(element) {
+
+	if (condition(element, ptr)==0) break;
+	element=element->prev;
+
+    }
+
+    return element;
+
+}

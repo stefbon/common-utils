@@ -21,10 +21,16 @@
 #ifndef GENERAL_SIMPLE_LOCKING_H
 #define GENERAL_SIMPLE_LOCKING_H
 
-struct simple_lock_s {
-    struct list_element_s		list;
-    pthread_t				thread;
-};
+#include "simple-list.h"
+
+#define SIMPLE_LOCK_TYPE_NONE		0
+#define SIMPLE_LOCK_TYPE_READ		1
+#define SIMPLE_LOCK_TYPE_WRITE		2
+
+#define SIMPLE_LOCK_FLAG_LIST		1
+#define SIMPLE_LOCK_FLAG_WAITING	2
+#define SIMPLE_LOCK_FLAG_EFFECTIVE	4
+#define SIMPLE_LOCK_FLAG_ALLOCATED	8
 
 struct simple_locking_s {
     pthread_mutex_t			mutex;
@@ -35,15 +41,29 @@ struct simple_locking_s {
     unsigned int			writers;
 };
 
+struct simple_lock_s {
+    unsigned char			type;
+    struct list_element_s		list;
+    pthread_t				thread;
+    unsigned char			flags;
+    struct simple_locking_s		*locking;
+    int					(* lock)(struct simple_lock_s *l);
+    int					(* unlock)(struct simple_lock_s *l);
+    int					(* upgrade)(struct simple_lock_s *l);
+    int					(* prelock)(struct simple_lock_s *l);
+};
+
 /* prototypes */
+
+void init_simple_readlock(struct simple_locking_s *locking, struct simple_lock_s *rlock);
+void init_simple_writelock(struct simple_locking_s *locking, struct simple_lock_s *wlock);
 
 int init_simple_locking(struct simple_locking_s *locking);
 void clear_simple_locking(struct simple_locking_s *locking);
 
-int simple_readlock(struct simple_locking_s *locking);
-int simple_readunlock(struct simple_locking_s *locking);
-int simple_writelock(struct simple_locking_s *locking);
-int simple_writeunlock(struct simple_locking_s *locking);
-int simple_upgrade_readlock(struct simple_locking_s *locking);
+int simple_lock(struct simple_lock_s *lock);
+int simple_unlock(struct simple_lock_s *lock);
+int simple_prelock(struct simple_lock_s *lock);
+int simple_upgradelock(struct simple_lock_s *lock);
 
 #endif

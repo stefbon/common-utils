@@ -79,6 +79,8 @@ struct fuse_fs_s {
 
     union datalink_u *(*get_datalink)(struct inode_s *inode);
     void (*set_datalink)(struct inode_s *inode, union datalink_u *link);
+    int (*lock_datalink)(struct inode_s *inode);
+    int (*unlock_datalink)(struct inode_s *inode);
 
     void (*forget) (struct inode_s *inode);
 
@@ -152,6 +154,8 @@ unsigned char fuse_request_interrupted(struct fuse_request_s *request);
 
 union datalink_u *get_datalink(struct inode_s *inode);
 void set_datalink(struct inode_s *inode, union datalink_u *link);
+int fs_lock_datalink(struct inode_s *inode);
+int fs_unlock_datalink(struct inode_s *inode);
 
 void fuse_fs_forget(struct fuse_request_s *request);
 void fuse_fs_forget_multi(struct fuse_request_s *request);

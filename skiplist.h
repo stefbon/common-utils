@@ -66,17 +66,21 @@ struct dirnode_struct {
 struct skiplist_struct;
 
 struct slops_struct {
-    void *(*next) (void *data);
-    void *(*prev) (void *data);
-    int (*compare)(void *a, void *b);
-    void (*insert_before) (void *data, void *before, struct skiplist_struct *sl);
-    void (*insert_after) (void *data, void *after, struct skiplist_struct *sl);
-    void (*delete) (void *data, struct skiplist_struct *sl);
-    int (*lock) (struct skiplist_struct *sl, unsigned short flags);
-    int (*unlock) (struct skiplist_struct *sl, unsigned short flags);
-    unsigned int (*count) (struct skiplist_struct *sl);
-    void *(*first) (struct skiplist_struct *sl);
-    void *(*last) (struct skiplist_struct *sl);
+    void 					*(* next) (void *data);
+    void 					*(* prev) (void *data);
+    int 					(* compare)(void *a, void *b);
+    void 					(* insert_before) (void *data, void *before, struct skiplist_struct *sl);
+    void 					(* insert_after) (void *data, void *after, struct skiplist_struct *sl);
+    void 					(* delete) (void *data, struct skiplist_struct *sl);
+    void					*(* create_rlock)(struct skiplist_struct *sl);
+    void					*(* create_wlock)(struct skiplist_struct *sl);
+    int						(* lock) (struct skiplist_struct *sl, void *ptr);
+    int						(* unlock) (struct skiplist_struct *sl, void *ptr);
+    int						(* upgradelock) (struct skiplist_struct *sl, void *ptr);
+    int						(* prelock) (struct skiplist_struct *sl, void *ptr);
+    unsigned int 				(* count) (struct skiplist_struct *sl);
+    void 					*(* first) (struct skiplist_struct *sl);
+    void 					*(* last) (struct skiplist_struct *sl);
 };
 
 struct skiplist_struct {
@@ -109,16 +113,20 @@ void destroy_vector_lanes(struct vector_dirnode_struct *vector);
 void unlock_dirnode_vector(struct vector_dirnode_struct *vector);
 
 int init_skiplist(struct skiplist_struct *sl, unsigned char prob,
-		    void *(*next)(void *data), void *(*prev)(void *data),
-		    int (*compare) (void *a, void *b),
-		    void (*insert_before) (void *data, void *before, struct skiplist_struct *sl),
-		    void (*insert_after) (void *data, void *after, struct skiplist_struct *sl),
-		    void (*delete) (void *data, struct skiplist_struct *sl),
-		    int (*lock) (struct skiplist_struct *sl, unsigned short flags),
-		    int (*unlock) (struct skiplist_struct *sl, unsigned short flags),
-		    unsigned int (*count) (struct skiplist_struct *sl),
-		    void *(*first) (struct skiplist_struct *sl),
-		    void *(*last) (struct skiplist_struct *sl),
+		    void *(* next)(void *data), void *(*prev)(void *data),
+		    int (* compare) (void *a, void *b),
+		    void (* insert_before) (void *data, void *before, struct skiplist_struct *sl),
+		    void (* insert_after) (void *data, void *after, struct skiplist_struct *sl),
+		    void (* delete) (void *data, struct skiplist_struct *sl),
+		    void *(* create_rlock)(struct skiplist_struct *sl),
+		    void *(* create_wlock)(struct skiplist_struct *sl),
+		    int (* lock) (struct skiplist_struct *sl, void *ptr),
+		    int (* unlock) (struct skiplist_struct *sl, void *ptr),
+		    int (* upgradelock) (struct skiplist_struct *sl, void *ptr),
+		    int (* prelock) (struct skiplist_struct *sl, void *ptr),
+		    unsigned int (* count) (struct skiplist_struct *sl),
+		    void *(* first) (struct skiplist_struct *sl),
+		    void *(* last) (struct skiplist_struct *sl),
 		    unsigned int *error);
 
 struct skiplist_struct *create_skiplist(unsigned int *error);

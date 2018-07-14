@@ -130,7 +130,7 @@ static struct context_interface_s *get_parent_dummy(struct context_interface_s *
     return NULL;
 }
 
-static unsigned int get_interface_option_dummy(struct context_interface_s *interface, const char *name, struct context_option_s *option)
+static unsigned int get_interface_option_dummy(void *ptr, const char *name, struct context_option_s *option)
 {
     return 0;
 }

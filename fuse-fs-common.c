@@ -66,8 +66,6 @@
 
 #define UINT32_T_MAX		0xFFFFFFFF
 
-extern struct fs_options_struct fs_options;
-
 const char *rootpath="/";
 const char *dotdotname="..";
 const char *dotname=".";
@@ -171,24 +169,19 @@ struct entry_s *get_target_symlink(struct workspace_mount_s *mount, struct entry
 void _fs_common_cached_lookup(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode)
 {
     struct fuse_entry_out entry_out;
-    uint64_t et_rounded=0;
-    uint64_t at_rounded=0;
+    struct timespec *attr_timeout=get_fuse_interface_attr_timeout(context->interface.ptr);
+    struct timespec *entry_timeout=get_fuse_interface_entry_timeout(context->interface.ptr);
 
     inode->nlookup++;
 
     entry_out.nodeid=inode->ino;
     entry_out.generation=0; /* todo: add a generation field to reuse existing inodes */
 
-    /* do this better: do it once at initialization */
+    entry_out.entry_valid=entry_timeout->tv_sec;
+    entry_out.entry_valid_nsec=entry_timeout->tv_nsec;
 
-    et_rounded = (uint64_t) fs_options.entry_timeout;
-    at_rounded = (uint64_t) fs_options.attr_timeout;
-
-    entry_out.entry_valid=et_rounded;
-    entry_out.entry_valid_nsec=(uint64_t) ((fs_options.entry_timeout - et_rounded) * 1000000000);
-
-    entry_out.attr_valid=at_rounded;
-    entry_out.attr_valid_nsec=(uint64_t) ((fs_options.attr_timeout - at_rounded) * 1000000000);
+    entry_out.attr_valid=attr_timeout->tv_sec;
+    entry_out.attr_valid_nsec=attr_timeout->tv_nsec;
 
     entry_out.attr.ino=inode->ino;
     entry_out.attr.size=inode->size;
@@ -224,8 +217,8 @@ void _fs_common_cached_create(struct service_context_s *context, struct fuse_req
     struct fuse_open_out open_out;
     unsigned int size_entry_out=sizeof(struct fuse_entry_out);
     unsigned int size_open_out=sizeof(struct fuse_open_out);
-    uint64_t et_rounded=0;
-    uint64_t at_rounded=0;
+    struct timespec *attr_timeout=get_fuse_interface_attr_timeout(context->interface.ptr);
+    struct timespec *entry_timeout=get_fuse_interface_entry_timeout(context->interface.ptr);
     char buffer[size_entry_out + size_open_out];
 
     // inode->nlookup++;
@@ -233,16 +226,11 @@ void _fs_common_cached_create(struct service_context_s *context, struct fuse_req
     entry_out.nodeid=inode->ino;
     entry_out.generation=0; /* todo: add a generation field to reuse existing inodes */
 
-    /* do this better: do it once at initialization */
+    entry_out.entry_valid=entry_timeout->tv_sec;
+    entry_out.entry_valid_nsec=entry_timeout->tv_nsec;
 
-    et_rounded = (uint64_t) fs_options.entry_timeout;
-    at_rounded = (uint64_t) fs_options.attr_timeout;
-
-    entry_out.entry_valid=et_rounded;
-    entry_out.entry_valid_nsec=(uint64_t) ((fs_options.entry_timeout - et_rounded) * 1000000000);
-
-    entry_out.attr_valid=at_rounded;
-    entry_out.attr_valid_nsec=(uint64_t) ((fs_options.attr_timeout - at_rounded) * 1000000000);
+    entry_out.attr_valid=attr_timeout->tv_sec;
+    entry_out.attr_valid_nsec=attr_timeout->tv_nsec;
 
     entry_out.attr.ino=inode->ino;
     entry_out.attr.size=inode->size;
@@ -341,12 +329,10 @@ void _fs_common_virtual_lookup(struct service_context_s *context, struct fuse_re
 void _fs_common_getattr(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode)
 {
     struct fuse_attr_out attr_out;
-    uint64_t at_rounded;
+    struct timespec *attr_timeout=get_fuse_interface_attr_timeout(context->interface.ptr);
 
-    at_rounded = (uint64_t) fs_options.attr_timeout;
-
-    attr_out.attr_valid=at_rounded;
-    attr_out.attr_valid_nsec=(uint64_t) ((fs_options.attr_timeout - at_rounded) * 1000000000);
+    attr_out.attr_valid=attr_timeout->tv_sec;
+    attr_out.attr_valid_nsec=attr_timeout->tv_nsec;
 
     attr_out.attr.ino=inode->ino;
     attr_out.attr.size=inode->size;
@@ -417,10 +403,11 @@ void _fs_common_virtual_readdir(struct fuse_opendir_s *opendir, struct fuse_requ
 	struct entry_s *entry=NULL;
 	char buff[size];
 	unsigned int error=0;
+	struct simple_lock_s rlock;
 
 	logoutput("READDIR virtual (thread %i)", (int) gettid());
 
-	if (lock_directory_read(opendir->inode)==0) {
+	if (rlock_directory(opendir->inode, &rlock)==0) {
 
 	    directory=get_directory(opendir->inode);
 	    if (offset==0) opendir->handle.ptr=(void *) directory->first;
@@ -514,7 +501,7 @@ void _fs_common_virtual_readdir(struct fuse_opendir_s *opendir, struct fuse_requ
 	}
 
 	reply_VFS_data(request, buff, pos);
-	unlock_directory_read(opendir->inode);
+	unlock_directory(opendir->inode, &rlock);
 
     }
 
@@ -540,10 +527,11 @@ void _fs_common_virtual_readdirplus(struct fuse_opendir_s *opendir, struct fuse_
 	struct entry_s *entry=NULL;
 	char buff[size];
 	unsigned int error=0;
+	struct simple_lock_s rlock;
 
 	logoutput("READDIRPLUS virtual (thread %i)", (int) gettid());
 
-	if (lock_directory_read(opendir->inode)==0) {
+	if (rlock_directory(opendir->inode, &rlock)==0) {
 
 	    directory=get_directory(opendir->inode);
 	    if (offset==0) opendir->handle.ptr=(void *) directory->first;
@@ -637,7 +625,7 @@ void _fs_common_virtual_readdirplus(struct fuse_opendir_s *opendir, struct fuse_
 	}
 
 	reply_VFS_data(request, buff, pos);
-	unlock_directory_read(opendir->inode);
+	unlock_directory(opendir->inode, &rlock);
 
     }
 

@@ -21,5 +21,6 @@
 
 void init_special_fs();
 void create_desktopentry_file(char *path, struct entry_s *parent, struct workspace_mount_s *workspace);
+int check_entry_special(struct inode_s *inode);
 
 #endif

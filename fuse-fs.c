@@ -74,6 +74,16 @@ void fs_inode_forget(struct inode_s *inode)
     (* inode->fs->forget)(inode);
 }
 
+int fs_lock_datalink(struct inode_s *inode)
+{
+    return (* inode->fs->lock_datalink)(inode);
+}
+
+int fs_unlock_datalink(struct inode_s *inode)
+{
+    return (* inode->fs->unlock_datalink)(inode);
+}
+
 static void _fuse_fs_forget_one(struct context_interface_s *interface, struct inode_s *inode, uint64_t nlookup)
 {
 
@@ -1292,9 +1302,9 @@ void fuse_fs_init(struct fuse_request_s *request)
 #ifdef FUSE_ASYNC_READ
 
 	    if (init_in->flags & FUSE_ASYNC_READ) {
-		unsigned int option=0;
+		int option=0;
 
-		if (get_interface_option(request->interface, "async-read", (void *) &option, sizeof(unsigned int))>0 && option==1) {
+		if (get_interface_option_integer(request->interface, "async-read", &option)>0 && option==1) {
 
 		    init_out.flags |= FUSE_ASYNC_READ;
 		    logoutput("fuse_fs_init: kernel supports asynchronous read requests (enable)");
@@ -1312,9 +1322,9 @@ void fuse_fs_init(struct fuse_request_s *request)
 #ifdef FUSE_POSIX_LOCKS
 
 	    if (init_in->flags & FUSE_POSIX_LOCKS) {
-		unsigned int option=0;
+		int option=0;
 
-		if (get_interface_option(request->interface, "posix-locks", (void *) &option, sizeof(unsigned int))>0 && option==1) {
+		if (get_interface_option_integer(request->interface, "posix-locks", &option)>0 && option==1) {
 
 		    init_out.flags |= FUSE_POSIX_LOCKS;
 		    logoutput("fuse_fs_init: kernel supports posix locks (enable)");
@@ -1332,9 +1342,9 @@ void fuse_fs_init(struct fuse_request_s *request)
 #ifdef FUSE_FILE_OPS
 
 	    if (init_in->flags & FUSE_FILE_OPS) {
-		unsigned int option=0;
+		int option=0;
 
-		if (get_interface_option(request->interface, "file-ops", (void *) &option, sizeof(unsigned int))>0 && option==1) {
+		if (get_interface_option_integer(request->interface, "file-ops", &option)>0 && option==1) {
 
 		    init_out.flags |= FUSE_FILE_OPS;
 		    logoutput("fuse_fs_init: kernel supports handles for fstat and fsetattr (enable)");
@@ -1352,9 +1362,9 @@ void fuse_fs_init(struct fuse_request_s *request)
 #ifdef FUSE_ATOMIC_O_TRUNC
 
 	    if (init_in->flags & FUSE_ATOMIC_O_TRUNC) {
-		unsigned int option=0;
+		int option=0;
 
-		if (get_interface_option(request->interface, "atomic-o-trunc", (void *) &option, sizeof(unsigned int))>0 && option==1)  {
+		if (get_interface_option_integer(request->interface, "atomic-o-trunc", &option)>0 && option==1)  {
 
 		    logoutput("fuse_fs_init: kernel supports filesystem handling of O_TRUNC (enable)");
 		    init_out.flags |= FUSE_ATOMIC_O_TRUNC;
@@ -1372,9 +1382,9 @@ void fuse_fs_init(struct fuse_request_s *request)
 #ifdef FUSE_EXPORT_SUPPORT
 
 	    if (init_in->flags & FUSE_EXPORT_SUPPORT) {
-		unsigned int option=0;
+		int option=0;
 
-		if (get_interface_option(request->interface, "export_support", (void *) &option, sizeof(unsigned int))>0 && option==1) {
+		if (get_interface_option_integer(request->interface, "export_support", &option)>0 && option==1) {
 
 		    logoutput("fuse_fs_init: kernel supports filesystem lookups of . and .. (enable)");
 		    init_out.flags |= FUSE_EXPORT_SUPPORT;
@@ -1392,9 +1402,9 @@ void fuse_fs_init(struct fuse_request_s *request)
 #ifdef FUSE_BIG_WRITES
 
 	    if (init_in->flags & FUSE_BIG_WRITES) {
-		unsigned int option=0;
+		int option=0;
 
-		if (get_interface_option(request->interface, "big-writes", (void *) &option, sizeof(unsigned int))>0 && option==1) {
+		if (get_interface_option_integer(request->interface, "big-writes", &option)>0 && option==1) {
 
 		    logoutput("fuse_fs_init: kernel supports writing of more than 4Kb (enable)");
 		    init_out.flags |= FUSE_BIG_WRITES;
@@ -1412,9 +1422,9 @@ void fuse_fs_init(struct fuse_request_s *request)
 #ifdef FUSE_DONT_MASK
 
 	    if (init_in->flags & FUSE_DONT_MASK) {
-		unsigned int option=0;
+		int option=0;
 
-		if (get_interface_option(request->interface, "dont-mask", (void *) &option, sizeof(unsigned int))>0 && option==1) {
+		if (get_interface_option_integer(request->interface, "dont-mask", &option)>0 && option==1) {
 
 		    logoutput("fuse_fs_init: kernel supports masking kernelspace (enable)");
 		    init_out.flags |= FUSE_DONT_MASK;
@@ -1432,9 +1442,9 @@ void fuse_fs_init(struct fuse_request_s *request)
 #ifdef FUSE_SPLICE_WRITE
 
 	    if (init_in->flags & FUSE_SPLICE_WRITE) {
-		unsigned int option=0;
+		int option=0;
 
-		if (get_interface_option(request->interface, "splice-write", (void *) &option, sizeof(unsigned int))>0 && option==1) {
+		if (get_interface_option_integer(request->interface, "splice-write", &option)>0 && option==1) {
 
 		    logoutput("fuse_fs_init: kernel supports splice writes (enable)");
 		    init_out.flags |= FUSE_SPLICE_WRITE;
@@ -1452,9 +1462,9 @@ void fuse_fs_init(struct fuse_request_s *request)
 #ifdef FUSE_SPLICE_MOVE
 
 	    if (init_in->flags & FUSE_SPLICE_MOVE) {
-		unsigned int option=0;
+		int option=0;
 
-		if (get_interface_option(request->interface, "splice-move", (void *) &option, sizeof(unsigned int))>0 && option==1) {
+		if (get_interface_option_integer(request->interface, "splice-move", &option)>0 && option==1) {
 
 		    logoutput("fuse_fs_init: kernel supports splice moves (enable)");
 		    init_out.flags |= FUSE_SPLICE_MOVE;
@@ -1472,9 +1482,9 @@ void fuse_fs_init(struct fuse_request_s *request)
 #ifdef FUSE_SPLICE_READ
 
 	    if (init_in->flags & FUSE_SPLICE_READ) {
-		unsigned int option=0;
+		int option=0;
 
-		if (get_interface_option(request->interface, "splice-read", (void *) &option, sizeof(unsigned int))>0 && option==1) {
+		if (get_interface_option_integer(request->interface, "splice-read", &option)>0 && option==1) {
 
 		    logoutput("fuse_fs_init: kernel supports splice reads (enable)");
 		    init_out.flags |= FUSE_SPLICE_READ;
@@ -1492,9 +1502,9 @@ void fuse_fs_init(struct fuse_request_s *request)
 #ifdef FUSE_FLOCK_LOCKS
 
 	    if (init_in->flags & FUSE_FLOCK_LOCKS) {
-		unsigned int option=0;
+		int option=0;
 
-		if (get_interface_option(request->interface, "flock-locks", (void *) &option, sizeof(unsigned int))>0 && option==1) {
+		if (get_interface_option_integer(request->interface, "flock-locks", &option)>0 && option==1) {
 
 		    logoutput("fuse_fs_init: kernel supports BSD file locks (enable)");
 		    init_out.flags |= FUSE_FLOCK_LOCKS;
@@ -1512,9 +1522,9 @@ void fuse_fs_init(struct fuse_request_s *request)
 #ifdef FUSE_HAS_IOCTL_DIR
 
 	    if (init_in->flags & FUSE_HAS_IOCTL_DIR) {
-		unsigned int option=0;
+		int option=0;
 
-		if (get_interface_option(request->interface, "has-ioctl-dir", (void *) &option, sizeof(unsigned int))>0 && option==1) {
+		if (get_interface_option_integer(request->interface, "has-ioctl-dir", &option)>0 && option==1) {
 
 		    logoutput("fuse_fs_init: kernel supports ioctl on directories (enable)");
 		    init_out.flags |= FUSE_HAS_IOCTL_DIR;
@@ -1532,9 +1542,9 @@ void fuse_fs_init(struct fuse_request_s *request)
 #ifdef FUSE_AUTO_INVAL_DATA
 
 	    if (init_in->flags & FUSE_AUTO_INVAL_DATA) {
-		unsigned int option=0;
+		int option=0;
 
-		if (get_interface_option(request->interface, "auto-inval-data", (void *) &option, sizeof(unsigned int))>0 && option==1) {
+		if (get_interface_option_integer(request->interface, "auto-inval-data", &option)>0 && option==1) {
 
 		    logoutput("fuse_fs_init: kernel supports automatic invalidate cached pages (enable)");
 		    init_out.flags |= FUSE_AUTO_INVAL_DATA;
@@ -1552,9 +1562,9 @@ void fuse_fs_init(struct fuse_request_s *request)
 #ifdef FUSE_DO_READDIRPLUS
 
 	    if (init_in->flags & FUSE_DO_READDIRPLUS) {
-		unsigned int option=0;
+		int option=0;
 
-		if (get_interface_option(request->interface, "do-readdirplus", (void *) &option, sizeof(unsigned int))>0 && option==1) {
+		if (get_interface_option_integer(request->interface, "do-readdirplus", &option)>0 && option==1) {
 
 		    logoutput("fuse_fs_init: kernel supports doing readdirplus in stead of readdir (enable)");
 		    init_out.flags |= FUSE_DO_READDIRPLUS;
@@ -1572,9 +1582,9 @@ void fuse_fs_init(struct fuse_request_s *request)
 #ifdef FUSE_READDIRPLUS_AUTO
 
 	    if (init_in->flags & FUSE_READDIRPLUS_AUTO) {
-		unsigned int option=0;
+		int option=0;
 
-		if (get_interface_option(request->interface, "readdirplus-auto", (void *) &option, sizeof(unsigned int))>0 && option==1) {
+		if (get_interface_option_integer(request->interface, "readdirplus-auto", &option)>0 && option==1) {
 
 		    logoutput("fuse_fs_init: kernel supports addaptive readdirplus (enable)");
 		    init_out.flags |= FUSE_READDIRPLUS_AUTO;
@@ -1592,9 +1602,9 @@ void fuse_fs_init(struct fuse_request_s *request)
 #ifdef FUSE_ASYNC_DIO
 
 	    if (init_in->flags & FUSE_ASYNC_DIO) {
-		unsigned int option=0;
+		int option=0;
 
-		if (get_interface_option(request->interface, "async-dio", (void *) &option, sizeof(unsigned int))>0 && option==1) {
+		if (get_interface_option_integer(request->interface, "async-dio", &option)>0 && option==1) {
 
 		    logoutput("fuse_fs_init: kernel supports asynchronous direct I/O (enable)");
 		    init_out.flags |= FUSE_ASYNC_DIO;
@@ -1612,9 +1622,9 @@ void fuse_fs_init(struct fuse_request_s *request)
 #ifdef FUSE_WRITEBACK_CACHE
 
 	    if (init_in->flags & FUSE_WRITEBACK_CACHE) {
-		unsigned int option=0;
+		int option=0;
 
-		if (get_interface_option(request->interface, "writeback-cache", (void *) &option, sizeof(unsigned int))>0 && option==1) {
+		if (get_interface_option_integer(request->interface, "writeback-cache", &option)>0 && option==1) {
 
 		    logoutput("fuse_fs_init: kernel supports writeback cache for buffered writes (enable)");
 		    init_out.flags |= FUSE_WRITEBACK_CACHE;
@@ -1632,9 +1642,9 @@ void fuse_fs_init(struct fuse_request_s *request)
 #ifdef FUSE_NO_OPEN_SUPPORT
 
 	    if (init_in->flags & FUSE_NO_OPEN_SUPPORT) {
-		unsigned int option=0;
+		int option=0;
 
-		if (get_interface_option(request->interface, "no-open-support", (void *) &option, sizeof(unsigned int))>0 && option==1) {
+		if (get_interface_option_integer(request->interface, "no-open-support", &option)>0 && option==1) {
 
 		    logoutput("fuse_fs_init: kernel supports zero-message open (enable)");
 		    init_out.flags |= FUSE_NO_OPEN_SUPPORT;
@@ -1660,9 +1670,9 @@ void fuse_fs_init(struct fuse_request_s *request)
 #ifdef FUSE_PARALLEL_DIROPS
 
 	    if (init_in->flags & FUSE_PARALLEL_DIROPS) {
-		unsigned int option=0;
+		int option=0;
 
-		if (get_interface_option(request->interface, "parallel-dirops", (void *) &option, sizeof(unsigned int))>0 && option==1) {
+		if (get_interface_option_integer(request->interface, "parallel-dirops", &option)>0 && option==1) {
 
 		    logoutput("fuse_fs_init: kernel supports parallel dir ops (enable)");
 		    init_out.flags |= FUSE_PARALLEL_DIROPS;
@@ -1688,9 +1698,9 @@ void fuse_fs_init(struct fuse_request_s *request)
 #ifdef FUSE_POSIX_ACL
 
 	    if (init_in->flags & FUSE_POSIX_ACL) {
-		unsigned int option=0;
+		int option=0;
 
-		if (get_interface_option(request->interface, "posix-acl", (void *) &option, sizeof(unsigned int))>0 && option==1) {
+		if (get_interface_option_integer(request->interface, "posix-acl", &option)>0 && option==1) {
 
 		    logoutput("fuse_fs_init: kernel supports enable/disable posix acls (enable)");
 		    init_out.flags |= FUSE_POSIX_ACL;
@@ -1716,9 +1726,9 @@ void fuse_fs_init(struct fuse_request_s *request)
 #ifdef FUSE_DO_FSNOTIFY
 
 	    if (init_in->flags & FUSE_DO_FSNOTIFY) {
-		unsigned int option=0;
+		int option=0;
 
-		if (get_interface_option(request->interface, "fsnotify", (void *) &option, sizeof(unsigned int))>0 && option==1) {
+		if (get_interface_option_integer(request->interface, "fsnotify", &option)>0 && option==1) {
 
 		    logoutput("fuse_fs_init: kernel supports enable/disable fsnotify (enable)");
 		    init_out.flags |= FUSE_DO_FSNOTIFY;

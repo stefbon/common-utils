@@ -49,7 +49,6 @@
 
 #include "logging.h"
 
-extern struct fs_options_struct fs_options;
 static struct workspace_base_s *base_list=NULL;
 
 

@@ -33,7 +33,7 @@
 #define logoutput_warning(...) syslog(LOG_WARNING, __VA_ARGS__)
 #define logoutput_error(...) syslog(LOG_ERR, __VA_ARGS__)
 
-#define logoutput(...) syslog(LOG_DEBUG, __VA_ARGS__)
+#define logoutput(...) syslog(LOG_INFO, __VA_ARGS__)
 
 static pid_t gettid()
 {

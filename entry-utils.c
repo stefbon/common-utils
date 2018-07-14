@@ -72,14 +72,15 @@ static struct entry_s *_find_entry_dummy(struct entry_s *parent, struct name_s *
 static struct entry_s *find_entry_dummy(struct entry_s *parent, struct name_s *xname, unsigned int *error)
 {
     find_entry_cb find_entry=_find_entry_dummy;
-    union datalink_u *link=&parent->inode->link;
-    struct directory_s *directory=(struct directory_s *) link->data;
 
-    pthread_mutex_lock(&directory->mutex);
+    if (fs_lock_datalink(parent->inode)==0) {
+	union datalink_u *link=&parent->inode->link;
+	struct directory_s *directory=(struct directory_s *) link->data;
 
-    if (!(directory->flags & _DIRECTORY_FLAG_DUMMY)) find_entry=directory->dops->find_entry;
+	if ((directory->flags & _DIRECTORY_FLAG_DUMMY)==0) find_entry=directory->dops->find_entry;
+	fs_unlock_datalink(parent->inode);
 
-    pthread_mutex_unlock(&directory->mutex);
+    }
 
     return (* find_entry)(parent, xname, error);
 }
@@ -93,15 +94,17 @@ static void _remove_entry_dummy(struct entry_s *entry, unsigned int *error)
 
 static void remove_entry_dummy(struct entry_s *entry, unsigned int *error)
 {
+    struct entry_s *parent=entry->parent;
     remove_entry_cb remove_entry=_remove_entry_dummy;
-    union datalink_u *link=&entry->parent->inode->link;
-    struct directory_s *directory=(struct directory_s *) link->data;
 
-    pthread_mutex_lock(&directory->mutex);
+    if (fs_lock_datalink(parent->inode)==0) {
+	union datalink_u *link=&entry->parent->inode->link;
+	struct directory_s *directory=(struct directory_s *) link->data;
 
-    if (!(directory->flags & _DIRECTORY_FLAG_DUMMY)) remove_entry=directory->dops->remove_entry;
+	if ((directory->flags & _DIRECTORY_FLAG_DUMMY)==0) remove_entry=directory->dops->remove_entry;
+	fs_unlock_datalink(parent->inode);
 
-    pthread_mutex_unlock(&directory->mutex);
+    }
 
     (* remove_entry)(entry, error);
 }
@@ -113,42 +116,37 @@ static void remove_entry_dummy(struct entry_s *entry, unsigned int *error)
     note there is no lock required, this lock is already set(!)
 */
 
+typedef struct entry_s *(*insert_entry_cb)(struct entry_s *entry, unsigned int *error, unsigned short flags);
+
+static struct entry_s *_insert_entry_dummy(struct entry_s *entry, unsigned int *error, unsigned short flags)
+{
+    *error=ENOMEM;
+    return NULL;
+}
+
 static struct entry_s *insert_entry_dummy(struct entry_s *entry, unsigned int *error, unsigned short flags)
 {
     struct entry_s *parent=entry->parent;
-    struct directory_s *directory=NULL;
-    struct directory_s *real_directory=NULL;
-    union datalink_u *link=&parent->inode->link;
+    insert_entry_cb insert_entry=_insert_entry_dummy;
 
-    /* when inserting an entry in the dummy directory, then create the "real" directory first */
+    logoutput("insert_entry_dummy");
 
-    directory=(struct directory_s *) link->data;
+    if (fs_lock_datalink(parent->inode)==0) {
+	union datalink_u *link=&parent->inode->link;
+	struct directory_s *directory=(struct directory_s *) link->data;
 
-    pthread_mutex_lock(&directory->mutex);
+	if (directory->flags & _DIRECTORY_FLAG_DUMMY) {
 
-    /* get the directory again: the inode can point to a just created directory */
-
-    real_directory=(struct directory_s *) link->data;
-
-    if (real_directory->flags & _DIRECTORY_FLAG_DUMMY) {
-
-	/* dealing with a dummy directory */
-
-	real_directory=(* directory->dops->create_directory)(parent->inode, 0, error);
-
-	if (! real_directory) {
-
-	    if (*error==0) *error=ENOMEM;
-	    pthread_mutex_unlock(&directory->mutex);
-	    return NULL;
+	    directory=(* directory->dops->create_directory)(parent->inode, error);
+	    if (directory) insert_entry=directory->dops->insert_entry;
 
 	}
 
+	fs_unlock_datalink(parent->inode);
+
     }
 
-    pthread_mutex_unlock(&directory->mutex);
-
-    return (* real_directory->dops->insert_entry)(entry, error, flags);
+    return (* insert_entry)(entry, error, flags);
 
 }
 
@@ -158,41 +156,44 @@ static void _init_directory(struct directory_s *directory)
     init_pathcalls(&directory->pathcalls);
 }
 
-static struct directory_s *create_directory(struct inode_s *inode, unsigned int lock, unsigned int *error)
+static struct directory_s *create_directory(struct inode_s *inode, unsigned int *error)
 {
-    return _create_directory(inode, _init_directory, lock, error);
+    return _create_directory(inode, _init_directory, error);
 }
 
 struct directory_s *_remove_directory(struct inode_s *inode, unsigned int *error)
 {
     struct directory_s *directory=NULL;
-    union datalink_u *link=&inode->link;
 
-    pthread_mutex_lock(&dummy_directory.mutex);
+    if (fs_lock_datalink(inode)==0) {
+	union datalink_u *link=&inode->link;
 
-    directory=(struct directory_s *) link->data;
+	directory=(struct directory_s *) link->data;
 
-    if (directory->flags & _DIRECTORY_FLAG_DUMMY) {
+	if (directory->flags & _DIRECTORY_FLAG_DUMMY) {
 
-	directory=NULL;
+	    directory=NULL;
 
-    } else {
+	} else {
+	    struct simple_lock_s wlock;
 
-	if ((* directory->dops->lock_excl)(inode)==0) {
+	    if ((* directory->dops->wlock)(inode, &wlock)==0) {
 
-	    directory->flags |= _DIRECTORY_FLAG_REMOVE;
-	    directory->dops=&removed_dops;
-	    directory->inode=NULL;
+		directory->flags |= _DIRECTORY_FLAG_REMOVE;
+		directory->dops=&removed_dops;
+		directory->inode=NULL;
 
-	    (* directory->dops->unlock_excl)(inode);
+		(* directory->dops->unlock)(inode, &wlock);
+
+	    }
+
+	    inode->link.data=(void *) &dummy_directory;
 
 	}
 
-	inode->link.data=(void *) &dummy_directory;
+	fs_unlock_datalink(inode);
 
     }
-
-    pthread_mutex_unlock(&dummy_directory.mutex);
 
     return directory;
 
@@ -221,166 +222,167 @@ void remove_entry_batch_dummy(struct directory_s *directory, struct entry_s *ent
     note there is no lock required, this lock is already set in the contex(!)
 */
 
+typedef struct entry_s *(*insert_entry_batch_cb)(struct directory_s *directory, struct entry_s *entry, unsigned int *error, unsigned short flags);
+
+static struct entry_s *_insert_entry_batch_dummy(struct directory_s *directory, struct entry_s *entry, unsigned int *error, unsigned short flags)
+{
+    *error=ENOMEM;
+    return NULL;
+}
+
 struct entry_s *insert_entry_batch_dummy(struct directory_s *directory, struct entry_s *entry, unsigned int *error, unsigned short flags)
 {
     struct entry_s *parent=entry->parent;
+    insert_entry_batch_cb insert_entry_batch=_insert_entry_batch_dummy;
     struct directory_s *real_directory=NULL;
-    union datalink_u *link=&parent->inode->link;
 
-    real_directory=(struct directory_s *)link->data;
+    if (fs_lock_datalink(parent->inode)==0) {
+	union datalink_u *link=&parent->inode->link;
 
-    if (real_directory->flags & _DIRECTORY_FLAG_DUMMY) {
+	real_directory=(struct directory_s *) link->data;
 
-	/* dealing with a dummy directory */
+	if (real_directory->flags & _DIRECTORY_FLAG_DUMMY) {
 
-	real_directory=(* directory->dops->create_directory)(parent->inode, 0, error);
-
-	if (! real_directory) {
-
-	    if (*error==0) *error=ENOMEM;
-	    return NULL;
+	    real_directory=(* directory->dops->create_directory)(parent->inode, error);
+	    if (real_directory) insert_entry_batch=real_directory->dops->insert_entry_batch;
 
 	}
 
+	fs_unlock_datalink(parent->inode);
+
     }
 
-    return (* real_directory->dops->insert_entry_batch)(real_directory, entry, error, flags);
+    return (* insert_entry_batch)(real_directory, entry, error, flags);
+
 }
 
-static int lock_read_dummy(struct inode_s *inode)
+static struct simple_lock_s *_create_lock_dummy_common(struct inode_s *inode, struct simple_lock_s *(*cb)(struct directory_s *d))
 {
     struct directory_s *directory=NULL;
-    struct directory_s *real_directory=NULL;
-    union datalink_u *link=&inode->link;
 
-    directory=(struct directory_s *) link->data;
+    if (fs_lock_datalink(inode)==0) {
+	union datalink_u *link=&inode->link;
 
-    pthread_mutex_lock(&directory->mutex);
+	directory=(struct directory_s *) link->data;
 
-    /* get the directory again: the inode can point to a just created directory */
+	if (directory->flags & _DIRECTORY_FLAG_DUMMY) {
+	    unsigned int error=0;
 
-    real_directory=(struct directory_s *) link->data;
+	    directory=(* directory->dops->create_directory)(inode, &error);
 
-    if (real_directory->flags & _DIRECTORY_FLAG_DUMMY) {
-	unsigned int error=0;
+	    if (directory==NULL) {
 
-	/*
-	    dealing with a dummy directory
-	    create a directory which is read locked
-	*/
+		fs_unlock_datalink(inode);
+		return NULL;
 
-	real_directory=(* directory->dops->create_directory)(inode, 4, &error);
-
-	if (! real_directory) {
-
-	    pthread_mutex_unlock(&directory->mutex);
-	    return -1;
-
-	} else {
-
-	    pthread_mutex_unlock(&directory->mutex);
-	    return 0;
+	    }
 
 	}
 
+	fs_unlock_datalink(inode);
+
     }
 
-    pthread_mutex_unlock(&directory->mutex);
-
-    return _lock_directory_read(real_directory);
-
+    return cb(directory);
 }
 
-static void unlock_read_dummy(struct inode_s *inode)
+static struct simple_lock_s *create_rlock_dummy(struct inode_s *inode)
 {
-    /* unlocking the directory read is not usefull for the dummy directory */
+    return _create_lock_dummy_common(inode, _create_rlock_directory);
 }
 
-static int lock_excl_dummy(struct inode_s *inode)
+static struct simple_lock_s *create_wlock_dummy(struct inode_s *inode)
+{
+    return _create_lock_dummy_common(inode, _create_wlock_directory);
+}
+
+static int _lock_dummy_common(struct inode_s *inode, struct simple_lock_s *lock, int (* cb)(struct directory_s *d, struct simple_lock_s *l))
 {
     struct directory_s *directory=NULL;
-    struct directory_s *real_directory=NULL;
-    union datalink_u *link=&inode->link;
 
-    directory=(struct directory_s *) link->data;
+    if (fs_lock_datalink(inode)==0) {
+	union datalink_u *link=&inode->link;
 
-    pthread_mutex_lock(&directory->mutex);
+	directory=(struct directory_s *) link->data;
 
-    /* get the directory again: the inode can point to a just created directory */
+	if (directory->flags & _DIRECTORY_FLAG_DUMMY) {
+	    unsigned int error=0;
 
-    real_directory=(struct directory_s *) link->data;
+	    directory=(* directory->dops->create_directory)(inode, &error);
 
-    if (real_directory->flags & _DIRECTORY_FLAG_DUMMY) {
-	unsigned int error=0;
+	    if (! directory) {
 
-	/*
-	    dealing with a dummy directory
-	    create a directory which is excl locked
-	*/
+		fs_unlock_datalink(inode);
+		return -1;
 
-	real_directory=(* directory->dops->create_directory)(inode, 2, &error);
-
-	if (! real_directory) {
-
-	    pthread_mutex_unlock(&directory->mutex);
-	    return -1;
-
-	} else {
-
-	    real_directory->write_thread = pthread_self();
-	    pthread_mutex_unlock(&directory->mutex);
-
-	    return 0;
+	    }
 
 	}
 
+	fs_unlock_datalink(inode);
+
     }
 
-    pthread_mutex_unlock(&directory->mutex);
-
-    return _lock_directory_excl(real_directory);
+    return cb(directory, lock);
 
 }
 
-static void unlock_excl_dummy(struct inode_s *inode)
+static int rlock_dummy(struct inode_s *inode, struct simple_lock_s *lock)
 {
-    /* unlocking the directory excl is not usefull for the dummy directory */
+    return _lock_dummy_common(inode, lock, _rlock_directory);
+}
+
+static int wlock_dummy(struct inode_s *inode, struct simple_lock_s *lock)
+{
+    return _lock_dummy_common(inode, lock, _wlock_directory);
+}
+
+static int lock_dummy(struct inode_s *inode, struct simple_lock_s *lock)
+{
+    return _lock_dummy_common(inode, lock, _lock_directory);
+}
+
+static int unlock_dummy(struct inode_s *inode, struct simple_lock_s *lock)
+{
+    return _lock_dummy_common(inode, lock, _unlock_directory);
+}
+
+static int upgradelock_dummy(struct inode_s *inode, struct simple_lock_s *lock)
+{
+    return _lock_dummy_common(inode, lock, _upgradelock_directory);
+}
+
+static int prelock_dummy(struct inode_s *inode, struct simple_lock_s *lock)
+{
+    return _lock_dummy_common(inode, lock, _prelock_directory);
 }
 
 static struct pathcalls_s *get_pathcalls_dummy(struct inode_s *inode)
 {
-    struct directory_s *directory=NULL;
-    struct directory_s *real_directory=NULL;
     struct pathcalls_s *pathcalls=NULL;
-    union datalink_u *link=&inode->link;
 
-    directory=(struct directory_s *) link->data;
+    if (fs_lock_datalink(inode)==0) {
+	union datalink_u *link=&inode->link;
+	struct directory_s *directory=NULL;
 
-    pthread_mutex_lock(&directory->mutex);
+	directory=(struct directory_s *) link->data;
 
-    /* get the directory again: the inode can point to a just created directory */
+	if (directory->flags & _DIRECTORY_FLAG_DUMMY) {
+	    unsigned int error=0;
 
-    real_directory=(struct directory_s *) link->data;
+	    directory=(* directory->dops->create_directory)(inode, &error);
 
-    if (real_directory->flags & _DIRECTORY_FLAG_DUMMY) {
-	unsigned int error=0;
+	    if (directory) pathcalls=&directory->pathcalls;
 
-	/*
-	    dealing with a dummy directory
-	    create a directory which is excl locked
-	*/
+	} else {
 
-	real_directory=(* directory->dops->create_directory)(inode, 0, &error);
+	    pathcalls=&directory->pathcalls;
 
-	if (real_directory) pathcalls=&real_directory->pathcalls;
+	}
 
-    } else {
-
-	pathcalls=&real_directory->pathcalls;
+	fs_unlock_datalink(inode);
 
     }
-
-    pthread_mutex_unlock(&directory->mutex);
 
     return pathcalls;
 
@@ -395,22 +397,26 @@ static struct dops_s dummy_dops = {
     .find_entry_batch		= find_entry_batch_dummy,
     .remove_entry_batch		= remove_entry_batch_dummy,
     .insert_entry_batch		= insert_entry_batch_dummy,
-    .lock_read			= lock_read_dummy,
-    .unlock_read		= unlock_read_dummy,
-    .lock_excl			= lock_excl_dummy,
-    .unlock_excl		= unlock_excl_dummy,
+    .create_rlock		= create_rlock_dummy,
+    .create_wlock		= create_wlock_dummy,
+    .rlock			= rlock_dummy,
+    .wlock			= wlock_dummy,
+    .lock			= lock_dummy,
+    .unlock			= unlock_dummy,
+    .upgradelock		= upgradelock_dummy,
+    .prelock			= prelock_dummy,
     .get_pathcalls		= get_pathcalls_dummy
 };
 
-/*
-    common entry function (find, insert, remove) for a normal directory
-*/
+/* common entry function (find, insert, remove) for a normal directory */
 
 static struct entry_s *find_entry_common(struct entry_s *parent, struct name_s *xname, unsigned int *error)
 {
     union datalink_u *link=&parent->inode->link;
     struct directory_s *directory=(struct directory_s *) link->data;
     unsigned int row=0;
+
+    // logoutput("find_entry_common");
 
     *error=0;
 
@@ -422,9 +428,11 @@ static void remove_entry_common(struct entry_s *entry, unsigned int *error)
 {
     struct entry_s *parent=entry->parent;
     union datalink_u *link=&parent->inode->link;
-    struct directory_s *directory=get_directory(parent->inode);
+    struct directory_s *directory=(struct directory_s *) link->data;
     struct name_s *lookupname=&entry->name;
     unsigned int row=0;
+
+    logoutput("remove_entry_common");
 
     delete_sl(&directory->skiplist, (void *) lookupname, &row, error);
 
@@ -439,6 +447,8 @@ static struct entry_s *insert_entry_common(struct entry_s *entry, unsigned int *
     unsigned int row=0;
     unsigned short sl_flags=0;
 
+    // logoutput("insert_entry_common");
+
     if (flags & _ENTRY_FLAG_TEMP) sl_flags |= _SL_INSERT_FLAG_NOLANE;
 
     return (struct entry_s *)insert_sl(&directory->skiplist, (void *) lookupname, &row, error, (void *) entry, sl_flags);
@@ -448,9 +458,7 @@ static struct entry_s *insert_entry_common(struct entry_s *entry, unsigned int *
 static struct entry_s *find_entry_common_batch(struct directory_s *directory, struct name_s *xname, unsigned int *error)
 {
     unsigned int row=0;
-
     return (struct entry_s *) find_sl_batch(&directory->skiplist, (void *) xname, &row, error);
-
 }
 
 static void remove_entry_common_batch(struct directory_s *directory, struct entry_s *entry, unsigned int *error)
@@ -474,33 +482,63 @@ static struct entry_s *insert_entry_common_batch(struct directory_s *directory, 
 
 }
 
-static int lock_read_common(struct inode_s *inode)
+static struct simple_lock_s *create_rlock_common(struct inode_s *inode)
 {
     union datalink_u *link=&inode->link;
     struct directory_s *directory=(struct directory_s *) link->data;
-    return _lock_directory_read(directory);
+    return _create_rlock_directory(directory);
+}
+
+static struct simple_lock_s *create_wlock_common(struct inode_s *inode)
+{
+    union datalink_u *link=&inode->link;
+    struct directory_s *directory=(struct directory_s *) link->data;
+    return _create_wlock_directory(directory);
+}
+
+static int rlock_common(struct inode_s *inode, struct simple_lock_s *lock)
+{
+    union datalink_u *link=&inode->link;
+    struct directory_s *directory=(struct directory_s *) link->data;
+    return _rlock_directory(directory, lock);
 
 }
 
-static void unlock_read_common(struct inode_s *inode)
+static int wlock_common(struct inode_s *inode, struct simple_lock_s *lock)
 {
     union datalink_u *link=&inode->link;
     struct directory_s *directory=(struct directory_s *) link->data;
-    _unlock_directory_read(directory);
-}
-
-static int lock_excl_common(struct inode_s *inode)
-{
-    union datalink_u *link=&inode->link;
-    struct directory_s *directory=(struct directory_s *) link->data;
-    return _lock_directory_excl(directory);
+    return _wlock_directory(directory, lock);
 
 }
-static void unlock_excl_common(struct inode_s *inode)
+
+static int lock_common(struct inode_s *inode, struct simple_lock_s *lock)
 {
     union datalink_u *link=&inode->link;
     struct directory_s *directory=(struct directory_s *) link->data;
-    _unlock_directory_excl(directory);
+    return _lock_directory(directory, lock);
+
+}
+
+static int unlock_common(struct inode_s *inode, struct simple_lock_s *lock)
+{
+    union datalink_u *link=&inode->link;
+    struct directory_s *directory=(struct directory_s *) link->data;
+    return _unlock_directory(directory, lock);
+}
+
+static int upgradelock_common(struct inode_s *inode, struct simple_lock_s *lock)
+{
+    union datalink_u *link=&inode->link;
+    struct directory_s *directory=(struct directory_s *) link->data;
+    return _upgradelock_directory(directory, lock);
+
+}
+static int prelock_common(struct inode_s *inode, struct simple_lock_s *lock)
+{
+    union datalink_u *link=&inode->link;
+    struct directory_s *directory=(struct directory_s *) link->data;
+    return _prelock_directory(directory, lock);
 }
 
 static struct pathcalls_s *get_pathcalls_common(struct inode_s *inode)
@@ -519,99 +557,75 @@ static struct dops_s default_dops = {
     .find_entry_batch		= find_entry_common_batch,
     .remove_entry_batch		= remove_entry_common_batch,
     .insert_entry_batch		= insert_entry_common_batch,
-    .lock_read			= lock_read_common,
-    .unlock_read		= unlock_read_common,
-    .lock_excl			= lock_excl_common,
-    .unlock_excl		= unlock_excl_common,
+    .create_rlock		= create_rlock_common,
+    .create_wlock		= create_wlock_common,
+    .rlock			= rlock_common,
+    .wlock			= wlock_common,
+    .lock			= lock_common,
+    .unlock			= unlock_common,
+    .upgradelock		= upgradelock_common,
+    .prelock			= prelock_common,
     .get_pathcalls		= get_pathcalls_common,
 };
 
-/*
-    entry functions when a directory is set as removed
-*/
+/* entry functions when a directory is set as removed */
 
 static struct entry_s *find_entry_removed(struct entry_s *parent, struct name_s *xname, unsigned int *error)
 {
-
     *error=ENOTDIR;
     return NULL;
-
 }
 
 static void remove_entry_removed(struct entry_s *entry, unsigned int *error)
 {
-
     *error=ENOTDIR;
     return;
-
 }
 
 static struct entry_s *insert_entry_removed(struct entry_s *entry, unsigned int *error, unsigned short flags)
 {
-
     *error=ENOTDIR;
     return NULL;
-
 }
 
-static struct directory_s *create_directory_removed(struct inode_s *inode, unsigned int lock, unsigned int *error)
+static struct directory_s *create_directory_removed(struct inode_s *inode, unsigned int *error)
 {
     *error=ENOTDIR;
     return NULL;
-
 }
 
 static struct directory_s *remove_directory_removed(struct inode_s *inode, unsigned int *error)
 {
     *error=ENOTDIR;
     return NULL;
-
 }
 
 static struct entry_s *find_entry_removed_batch(struct directory_s *directory, struct name_s *xname, unsigned int *error)
 {
-
     *error=ENOTDIR;
     return NULL;
-
 }
 
 static void remove_entry_removed_batch(struct directory_s *directory, struct entry_s *entry, unsigned int *error)
 {
-
     *error=ENOTDIR;
     return;
-
 }
 
 static struct entry_s *insert_entry_removed_batch(struct directory_s *directory, struct entry_s *entry, unsigned int *error, unsigned short flags)
 {
-
     *error=ENOTDIR;
     return NULL;
-
 }
 
-static int lock_read_removed(struct inode_s *inode)
+struct simple_lock_s *create_lock_removed(struct inode_s *inode)
 {
+    return NULL;
+}
 
+static int lock_removed(struct inode_s *inode, struct simple_lock_s *lock)
+{
     return -1;
-
-}
-
-static void unlock_read_removed(struct inode_s *inode)
-{
-}
-
-static int lock_excl_removed(struct inode_s *inode)
-{
-
-    return -1;
-
-}
-
-static void unlock_excl_removed(struct inode_s *inode)
-{
 }
 
 static struct pathcalls_s *get_pathcalls_removed(struct inode_s *inode)
@@ -628,21 +642,25 @@ static struct dops_s removed_dops = {
     .find_entry_batch		= find_entry_removed_batch,
     .remove_entry_batch		= remove_entry_removed_batch,
     .insert_entry_batch		= insert_entry_removed_batch,
-    .lock_read			= lock_read_removed,
-    .unlock_read		= unlock_read_removed,
-    .lock_excl			= lock_excl_removed,
-    .unlock_excl		= unlock_excl_removed,
+    .create_rlock		= create_lock_removed,
+    .create_wlock		= create_lock_removed,
+    .rlock			= lock_removed,
+    .wlock			= lock_removed,
+    .lock			= lock_removed,
+    .unlock			= lock_removed,
+    .upgradelock		= lock_removed,
+    .prelock			= lock_removed,
     .get_pathcalls		= get_pathcalls_removed,
 };
 
-/*
-    simple functions which call the right function for the directory
-*/
+/* simple functions which call the right function for the directory */
 
 struct entry_s *find_entry(struct entry_s *parent, struct name_s *xname, unsigned int *error)
 {
     union datalink_u *link=&parent->inode->link;
     struct directory_s *directory=(struct directory_s *) link->data;
+
+    // logoutput("find_entry");
 
     return (* directory->dops->find_entry)(parent, xname, error);
 }
@@ -653,6 +671,8 @@ void remove_entry(struct entry_s *entry, unsigned int *error)
     union datalink_u *link=&parent->inode->link;
     struct directory_s *directory=(struct directory_s *) link->data;
 
+    logoutput("remove_entry");
+
     (* directory->dops->remove_entry)(entry, error);
 }
 
@@ -661,6 +681,8 @@ struct entry_s *insert_entry(struct entry_s *entry, unsigned int *error, unsigne
     struct entry_s *parent=entry->parent;
     union datalink_u *link=&parent->inode->link;
     struct directory_s *directory=(struct directory_s *) link->data;
+
+    // logoutput("insert_entry");
 
     return (* directory->dops->insert_entry)(entry, error, flags);
 
@@ -688,32 +710,60 @@ struct directory_s *remove_directory(struct inode_s *inode, unsigned int *error)
     return (* directory->dops->remove_directory)(inode, error);
 }
 
-int lock_directory_read(struct inode_s *inode)
+struct simple_lock_s *create_rlock_directory(struct inode_s *inode)
 {
     union datalink_u *link=&inode->link;
     struct directory_s *directory=(struct directory_s *) link->data;
-    return (* directory->dops->lock_read)(inode);
+    return (* directory->dops->create_rlock)(inode);
 }
 
-int lock_directory_excl(struct inode_s *inode)
+struct simple_lock_s *create_wlock_directory(struct inode_s *inode)
 {
     union datalink_u *link=&inode->link;
     struct directory_s *directory=(struct directory_s *) link->data;
-    return (* directory->dops->lock_excl)(inode);
+    return (* directory->dops->create_wlock)(inode);
 }
 
-void unlock_directory_read(struct inode_s *inode)
+int rlock_directory(struct inode_s *inode, struct simple_lock_s *lock)
 {
     union datalink_u *link=&inode->link;
     struct directory_s *directory=(struct directory_s *) link->data;
-    (* directory->dops->unlock_read)(inode);
+    return (* directory->dops->rlock)(inode, lock);
 }
 
-void unlock_directory_excl(struct inode_s *inode)
+int wlock_directory(struct inode_s *inode, struct simple_lock_s *lock)
 {
     union datalink_u *link=&inode->link;
     struct directory_s *directory=(struct directory_s *) link->data;
-    (* directory->dops->unlock_excl)(inode);
+    return (* directory->dops->wlock)(inode, lock);
+}
+
+int lock_directory(struct inode_s *inode, struct simple_lock_s *lock)
+{
+    union datalink_u *link=&inode->link;
+    struct directory_s *directory=(struct directory_s *) link->data;
+    return (* directory->dops->lock)(inode, lock);
+}
+
+int unlock_directory(struct inode_s *inode, struct simple_lock_s *lock)
+{
+    union datalink_u *link=&inode->link;
+    struct directory_s *directory=(struct directory_s *) link->data;
+    return (* directory->dops->unlock)(inode, lock);
+}
+
+int upgradelock_directory(struct inode_s *inode, struct simple_lock_s *lock)
+{
+    union datalink_u *link=&inode->link;
+    struct directory_s *directory=(struct directory_s *) link->data;
+    return (* directory->dops->upgradelock)(inode, lock);
+}
+
+int prelock_directory(struct inode_s *inode, struct simple_lock_s *lock)
+{
+    union datalink_u *link=&inode->link;
+    struct directory_s *directory=(struct directory_s *) link->data;
+    return (* directory->dops->prelock)(inode, lock);
 }
 
 struct pathcalls_s *get_pathcalls(struct inode_s *inode)
@@ -840,7 +890,6 @@ struct entry_s *create_entry_extended( struct entry_s *parent,
 
 }
 
-
 struct entry_s *create_entry_extended_batch(struct directory_s *directory,
 					    struct name_s *xname, 
 					    void (* cb_created)(struct entry_s *entry, void *data),
@@ -955,10 +1004,11 @@ static void _remove_directory_cb (struct directory_s **directory, unsigned char 
 {
 
     if (when==0) {
+	struct simple_lock_s wlock;
 
-	_lock_directory_excl(*directory);
+	_wlock_directory(*directory, &wlock);
 	(*directory)->flags |= _DIRECTORY_FLAG_REMOVE;
-	_unlock_directory_excl(*directory);
+	_unlock_directory(*directory, &wlock);
 
     } else {
 

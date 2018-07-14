@@ -31,10 +31,14 @@ struct entry_s *insert_entry_batch(struct directory_s *directory, struct entry_s
 struct directory_s *_remove_directory(struct inode_s *inode, unsigned int *error);
 struct directory_s *remove_directory(struct inode_s *inode, unsigned int *error);
 
-int lock_directory_read(struct inode_s *inode);
-int lock_directory_excl(struct inode_s *inode);
-void unlock_directory_read(struct inode_s *inode);
-void unlock_directory_excl(struct inode_s *inode);
+struct simple_lock_s *create_rlock_directory(struct inode_s *inode);
+struct simple_lock_s *create_wlock_directory(struct inode_s *inode);
+int rlock_directory(struct inode_s *inode, struct simple_lock_s *lock);
+int wlock_directory(struct inode_s *inode, struct simple_lock_s *lock);
+int lock_directory(struct inode_s *inode, struct simple_lock_s *lock);
+int unlock_directory(struct inode_s *inode, struct simple_lock_s *lock);
+int upgradelock_directory(struct inode_s *inode, struct simple_lock_s *lock);
+int prelock_directory(struct inode_s *inode, struct simple_lock_s *lock);
 
 void init_directory_calls();
 struct directory_s *get_dummy_directory();

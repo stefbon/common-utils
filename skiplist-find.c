@@ -49,9 +49,9 @@ static void *find_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, unsi
     int level, diff=0;
     struct vector_dirnode_struct vector;
     unsigned int search_row=0;
+    void *ptr=NULL;
 
-    sl->ops.lock(sl, _SKIPLIST_READLOCK);
-
+    ptr=sl->ops.create_rlock(sl);
     if (sl->ops.count(sl)==0) goto unlock;
 
     init_vector(&vector);
@@ -284,7 +284,7 @@ static void *find_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, unsi
 
     unlock:
 
-    sl->ops.unlock(sl, _SKIPLIST_READLOCK);
+    sl->ops.unlock(sl, ptr);
 
     if (row) *row=search_row;
 

@@ -112,16 +112,20 @@ void unlock_dirnode_vector(struct vector_dirnode_struct *vector)
 }
 
 int init_skiplist(struct skiplist_struct *sl, unsigned char prob, 
-		    void *(*next)(void *data), void *(*prev)(void *data),
-		    int (*compare) (void *a, void *b),
-		    void (*insert_before) (void *data, void *before, struct skiplist_struct *sl),
-		    void (*insert_after) (void *data, void *after, struct skiplist_struct *sl),
-		    void (*delete) (void *data, struct skiplist_struct *sl),
-		    int (*lock) (struct skiplist_struct *sl, unsigned short flags),
-		    int (*unlock) (struct skiplist_struct *sl, unsigned short flags),
-		    unsigned int (*count) (struct skiplist_struct *sl),
-		    void *(*first) (struct skiplist_struct *sl),
-		    void *(*last) (struct skiplist_struct *sl),
+		    void *(* next)(void *data), void *(*prev)(void *data),
+		    int (* compare) (void *a, void *b),
+		    void (* insert_before) (void *data, void *before, struct skiplist_struct *sl),
+		    void (* insert_after) (void *data, void *after, struct skiplist_struct *sl),
+		    void (* delete) (void *data, struct skiplist_struct *sl),
+		    void *(* create_rlock)(struct skiplist_struct *sl),
+		    void *(* create_wlock)(struct skiplist_struct *sl),
+		    int (* lock) (struct skiplist_struct *sl, void *ptr),
+		    int (* unlock) (struct skiplist_struct *sl, void *ptr),
+		    int (* upgradelock) (struct skiplist_struct *sl, void *ptr),
+		    int (* prelock) (struct skiplist_struct *sl, void *ptr),
+		    unsigned int (* count) (struct skiplist_struct *sl),
+		    void *(* first) (struct skiplist_struct *sl),
+		    void *(* last) (struct skiplist_struct *sl),
 		    unsigned int *error)
 {
 
@@ -135,8 +139,9 @@ int init_skiplist(struct skiplist_struct *sl, unsigned char prob,
 
 	*error=EINVAL;
 
-    } else if (! next || ! prev || ! compare || ! insert_before || ! insert_after || 
-		! delete || ! lock || ! unlock || ! count || ! first || ! last) {
+    } else if (! next || ! prev || ! compare || ! insert_before || ! insert_after || ! delete ||
+		! create_rlock || ! create_wlock || ! lock || ! unlock || ! upgradelock || ! prelock ||
+		! count || ! first || ! last) {
 
 	*error=EINVAL;
 
@@ -150,8 +155,12 @@ int init_skiplist(struct skiplist_struct *sl, unsigned char prob,
 	sl->ops.insert_before=insert_before;
 	sl->ops.insert_after=insert_after;
 	sl->ops.delete=delete;
+	sl->ops.create_rlock=create_rlock;
+	sl->ops.create_wlock=create_wlock;
 	sl->ops.lock=lock;
 	sl->ops.unlock=unlock;
+	sl->ops.upgradelock=upgradelock;
+	sl->ops.prelock=prelock;
 	sl->ops.count=count;
 	sl->ops.first=first;
 	sl->ops.last=last;
@@ -183,17 +192,7 @@ struct skiplist_struct *create_skiplist(unsigned int *error)
 
     } else {
 
-	sl->ops.next=NULL;
-	sl->ops.prev=NULL;
-	sl->ops.compare=NULL;
-	sl->ops.insert_before=NULL;
-	sl->ops.insert_after=NULL;
-	sl->ops.delete=NULL;
-	sl->ops.lock=NULL;
-	sl->ops.unlock=NULL;
-	sl->ops.count=NULL;
-	sl->ops.first=NULL;
-	sl->ops.last=NULL;
+	memset(sl, 0, sizeof(struct skiplist_struct));
 
 	sl->prob=4; /* a non zero default value */
 	sl->dirnode=NULL;

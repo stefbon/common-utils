@@ -63,8 +63,6 @@
 
 #include "logging.h"
 
-extern struct fs_options_struct fs_options;
-
 #define _FSSYNC_STATUS_OK			0
 #define _FSSYNC_STATUS_SCHEDULED		1
 #define _FSSYNC_STATUS_RUNNING			2
@@ -507,6 +505,7 @@ static void synchronize_directory(struct inode_s *pinode, struct fssynccb_struct
 	struct entry_s *parent=pinode->alias;
 	struct statfs stfs;
 	struct timespec synctime;
+	struct simple_lock_s lock;
 
 	fd=open(path, O_RDONLY | O_DIRECTORY);
 
@@ -524,7 +523,7 @@ static void synchronize_directory(struct inode_s *pinode, struct fssynccb_struct
 
 	}
 
-	if (lock_directory(directory, _DIRECTORY_LOCK_EXCL)==-1) {
+	if (wlock_directory(directory, &lock)==-1) {
 
 	    error=EAGAIN;
 	    goto out;
@@ -659,7 +658,7 @@ static void synchronize_directory(struct inode_s *pinode, struct fssynccb_struct
 
 	unlock:
 
-	if (unlock_directory(directory, _DIRECTORY_LOCK_EXCL)==-1) {
+	if (unlock_directory(directory, &lock)==-1) {
 
 	    logoutput("synchronize_directory: error unlocking directory EXCL");
 
@@ -680,46 +679,35 @@ static void synchronize_directory(struct inode_s *pinode, struct fssynccb_struct
 
 }
 
-/*
-    function which called during the synchronization of a directory when an entry is created
-*/
+/* function which called during the synchronization of a directory when an entry is created */
 
 void fssync_create_entry_cb(struct workspace_object_struct *object, struct entry_s *entry, uint32_t mask)
 {
     unsigned int error=0;
-
     if (mask & IN_CREATE) queue_create(object, entry, &error);
-
 }
 
 void fssync_create_entry_cb_ignore(struct workspace_object_struct *object, struct entry_s *entry, uint32_t mask)
 {
 }
 
-/*
-    function which called during the synchronization of a directory when an entry is changed
-*/
+/* function which called during the synchronization of a directory when an entry is changed */
 
 void fssync_change_entry_cb(struct workspace_object_struct *object, struct entry_s *entry, uint32_t event_mask, uint32_t mask)
 {
     unsigned int error=0;
-
     if (mask & (IN_ATTRIB | IN_MODIFY)) queue_change(object, entry, event_mask, &error);
-
 }
 
 void fssync_change_entry_cb_ignore(struct workspace_object_struct *object, struct entry_s *entry, uint32_t event_mask, uint32_t mask)
 {
 }
 
-/*
-    function which called during the synchronization of a directory when an entry is removed
-*/
+/* function which called during the synchronization of a directory when an entry is removed */
 
 void fssync_remove_entry_cb(struct workspace_object_struct *object, struct entry_s *entry, uint32_t mask)
 {
     unsigned int error=0;
-
     if (mask & (IN_DELETE | IN_MOVED_FROM)) queue_remove(object, entry, &error);
 }
 

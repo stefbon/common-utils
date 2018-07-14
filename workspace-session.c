@@ -52,7 +52,6 @@
 #include "simple-hash.h"
 #include "logging.h"
 
-extern struct fs_options_struct fs_options;
 static struct simple_hash_s fuse_users_hash;
 
 /* functions to lookup a user using the uid */
@@ -95,14 +94,24 @@ void remove_fuse_user_hash(struct fuse_user_s *user)
     remove_data_from_hash(&fuse_users_hash, (void *) user);
 }
 
-void lock_users_hash()
+void init_rlock_users_hash(struct simple_lock_s *l)
 {
-    writelock_hashtable(&fuse_users_hash);
+    init_rlock_hashtable(&fuse_users_hash, l);
 }
 
-void unlock_users_hash()
+void init_wlock_users_hash(struct simple_lock_s *l)
 {
-    unlock_hashtable(&fuse_users_hash);
+    init_wlock_hashtable(&fuse_users_hash, l);
+}
+
+void lock_users_hash(struct simple_lock_s *l)
+{
+    simple_lock(l);
+}
+
+void unlock_users_hash(struct simple_lock_s *l)
+{
+    simple_unlock(l);
 }
 
 struct fuse_user_s *get_next_fuse_user(void **index, unsigned int *hashvalue)

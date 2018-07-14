@@ -186,3 +186,57 @@ char *get_connection_hostname(unsigned int fd, unsigned char what, unsigned int 
     return NULL;
 
 }
+
+/* initialize a message to send an fd over a unix socket 
+    copied from question on stackoverflow:
+    https://stackoverflow.com/questions/37885831/ubuntu-linux-send-file-descriptor-with-unix-domain-socket#37885976
+*/
+
+void init_fd_msg(struct msghdr *message, int fd)
+{
+    struct cmsghdr *ctrl_message = NULL;
+    int size=CMSG_SPACE(sizeof(int)); /* storage space needed for an ancillary element with a paylod of length is CMSG_SPACE(sizeof(length)) */
+    char buffer[size];
+
+    /* init space ancillary data */
+
+    memset(buffer, 0, size);
+    socket_message.msg_control = buffer;
+    socket_message.msg_controllen = size;
+
+    /* assign fd to a single ancillary data element */
+
+    ctrl_message = CMSG_FIRSTHDR(message);
+    ctrl_message->cmsg_level = SOL_SOCKET;
+    ctrl_message->cmsg_type = SCM_RIGHTS;
+    ctrl_message->cmsg_len = CMSG_LEN(sizeof(int));
+
+    *((int *) CMSG_DATA(ctrl_message)) = fd;
+
+}
+
+/* read fd from a message
+    copied from question on stackoverflow:
+    https://stackoverflow.com/questions/37885831/ubuntu-linux-send-file-descriptor-with-unix-domain-socket#37885976
+*/
+
+int read_fd_msg(struct msghdr *message)
+{
+    struct cmsghdr *ctrl_message = NULL;
+    int fd=-1;
+
+    /* iterate ancillary elements */
+
+    for (ctrl_message = CMSG_FIRSTHDR(message); ctrl_message != NULL; ctrl_message = CMSG_NXTHDR(message, ctrl_message)) {
+
+	if ((ctrl_message->cmsg_level == SOL_SOCKET) && (ctrl_message->cmsg_type == SCM_RIGHTS)) {
+
+	    fd = *((int *) CMSG_DATA(ctrl_message));
+	    break;
+	}
+
+    }
+
+    return fd;
+
+}

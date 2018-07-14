@@ -26,4 +26,7 @@ unsigned char check_family_ip_address(char *address, const char *what);
 char *get_connection_ipv4(unsigned int fd, unsigned char what, unsigned int *error);
 char *get_connection_hostname(unsigned int fd, unsigned char what, unsigned int *error);
 
+void init_fd_msg(struct msghdr *message, int fd);
+int read_fd_msg(struct msghdr *message);
+
 #endif

@@ -71,6 +71,10 @@ void reply_VFS_error(struct fuse_request_s *r, unsigned int error);
 void reply_VFS_nosys(struct fuse_request_s *r);
 void reply_VFS_xattr(struct fuse_request_s *r, size_t size);
 
+struct timespec *get_fuse_interface_attr_timeout(void *ptr);
+struct timespec *get_fuse_interface_entry_timeout(void *ptr);
+struct timespec *get_fuse_interface_negative_timeout(void *ptr);
+
 size_t add_direntry_buffer(char *buffer, size_t size, off_t offset, struct name_s *xname, struct stat *st, unsigned int *error);
 
 #endif

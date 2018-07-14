@@ -70,7 +70,6 @@ static pthread_mutex_t done_mutex=PTHREAD_MUTEX_INITIALIZER;
 
 static unsigned char service_fs_count(struct inode_s *inode)
 {
-    logoutput("service_fs_count");
     return 1;
 }
 
@@ -133,7 +132,15 @@ static void service_fs_lookup(struct service_context_s *context, struct fuse_req
 
     if (entry) {
 
-	(* context->fs->lookup_existing)(context, request, entry, &pathinfo);
+	if (check_entry_special(entry->inode)==0) {
+
+	    _fs_common_cached_lookup(context, request, entry->inode);
+
+	} else {
+
+	    (* context->fs->lookup_existing)(context, request, entry, &pathinfo);
+
+	}
 
     } else {
 

@@ -38,4 +38,7 @@ void remove_list_element(struct list_element_s **head, struct list_element_s **t
 
 struct list_element_s *get_list_head(struct list_element_s **head, struct list_element_s **tail);
 
+struct list_element_s *search_list_element_forw(struct list_element_s *head, struct list_element_s *tail, int (* condition)(struct list_element_s *list, void *ptr), void *ptr);
+struct list_element_s *search_list_element_back(struct list_element_s *head, struct list_element_s *tail, int (* condition)(struct list_element_s *list, void *ptr), void *ptr);
+
 #endif

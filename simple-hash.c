@@ -29,6 +29,8 @@
 
 #include "simple-list.h"
 #include "simple-hash.h"
+#define LOGGING
+#include "logging.h"
 
 static inline struct hash_element_s *get_hash_element(struct list_element_s *list)
 {
@@ -68,8 +70,10 @@ static void move_from_hash(struct simple_hash_s *group, struct hash_element_s *e
 struct hash_element_s *lookup_simple_hash(struct simple_hash_s *group, void *data)
 {
     struct list_element_s *list=NULL;
-    unsigned int i=((*group->hashfunction) (data) % group->len);
+    unsigned int i=0;
     struct hash_element_s *element=NULL;
+
+    i=((*group->hashfunction) (data) % group->len);
 
     list=group->hash[i].head;
 
@@ -86,11 +90,37 @@ struct hash_element_s *lookup_simple_hash(struct simple_hash_s *group, void *dat
 
 }
 
+int lock_hashtable(struct simple_lock_s *lock)
+{
+    return simple_lock(lock);
+}
+
+int unlock_hashtable(struct simple_lock_s *lock)
+{
+    return simple_unlock(lock);
+}
+
+void init_rlock_hashtable(struct simple_hash_s *group, struct simple_lock_s *lock)
+{
+    init_simple_readlock(&group->locking, lock);
+}
+
+void init_wlock_hashtable(struct simple_hash_s *group, struct simple_lock_s *lock)
+{
+    init_simple_writelock(&group->locking, lock);
+}
+
 int initialize_group(struct simple_hash_s *group, unsigned int (*hashfunction) (void *data), unsigned int len, unsigned int *error)
 {
     int result=0;
 
-    pthread_rwlock_init(&group->rwlock, NULL);
+    if (init_simple_locking(&group->locking)==-1) {
+
+	*error=ENOMEM;
+	goto error;
+
+    }
+
     group->hashfunction=hashfunction;
     group->len=len;
     group->hash=NULL;
@@ -127,8 +157,10 @@ int initialize_group(struct simple_hash_s *group, unsigned int (*hashfunction) (
 
 void free_group(struct simple_hash_s *group, void (*free_data) (void *data))
 {
+    struct simple_lock_s wlock;
 
-    pthread_rwlock_wrlock(&group->rwlock);
+    init_wlock_hashtable(group, &wlock);
+    lock_hashtable(&wlock);
 
     if (group->hash) {
 	struct list_element_s *list=NULL;
@@ -157,25 +189,11 @@ void free_group(struct simple_hash_s *group, void (*free_data) (void *data))
 
     }
 
-    pthread_rwlock_unlock(&group->rwlock);
-    pthread_rwlock_destroy(&group->rwlock);
+    unlock_hashtable(&wlock);
+    clear_simple_locking(&group->locking);
 
 }
 
-int readlock_hashtable(struct simple_hash_s *group)
-{
-    return pthread_rwlock_rdlock(&group->rwlock);
-}
-
-int writelock_hashtable(struct simple_hash_s *group)
-{
-    return pthread_rwlock_wrlock(&group->rwlock);
-}
-
-int unlock_hashtable(struct simple_hash_s *group)
-{
-    return pthread_rwlock_unlock(&group->rwlock);
-}
 
 void *get_next_hashed_value(struct simple_hash_s *group, void **index, unsigned int hashvalue)
 {
@@ -215,6 +233,8 @@ void add_data_to_hash(struct simple_hash_s *group, void *data)
 void remove_data_from_hash(struct simple_hash_s *group, void *data)
 {
     struct hash_element_s *element=lookup_simple_hash(group, data);
+
+    logoutput("remove_data_from_hash");
 
     if (element) {
 

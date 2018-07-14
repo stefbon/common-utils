@@ -51,7 +51,6 @@
 #include "workspace-interface.h"
 
 #include "beventloop.h"
-#include "options.h"
 #include "fuse-interface.h"
 
 #define FUSEPARAM_OPTION_MOUNTED				1
@@ -82,6 +81,9 @@ struct fuseparam_s {
     size_t 					size;
     size_t					read;
     unsigned char				options;
+    struct timespec				attr_timeout;
+    struct timespec				entry_timeout;
+    struct timespec				negative_timeout;
     struct context_interface_s			*interface;
     struct bevent_xdata_s			*xdata;
     unsigned int				size_cb;
@@ -799,6 +801,16 @@ static struct fuseparam_s *create_fuse_interface()
 	fuseparam->options=0;
 	fuseparam->interface=NULL;
 	fuseparam->xdata=NULL;
+
+	fuseparam->attr_timeout.tv_sec=1;
+	fuseparam->attr_timeout.tv_nsec=0;
+
+	fuseparam->entry_timeout.tv_sec=1;
+	fuseparam->entry_timeout.tv_nsec=0;
+
+	fuseparam->negative_timeout.tv_sec=1;
+	fuseparam->negative_timeout.tv_nsec=0;
+
 	fuseparam->size_cb=(sizeof(fuseparam->fuse_cb) / sizeof(fuseparam->fuse_cb[0]));
 
 	/* default various ops */
@@ -865,6 +877,27 @@ pthread_cond_t *get_fuse_pthread_cond(struct context_interface_s *interface)
 {
     struct fuseparam_s *fuseparam=(struct fuseparam_s *) interface->ptr;
     return &fuseparam->cond;
+}
+
+struct timespec *get_fuse_interface_attr_timeout(void *ptr)
+{
+    struct fuseparam_s *fuseparam=(struct fuseparam_s *) ptr;
+
+    return &fuseparam->attr_timeout;
+}
+
+struct timespec *get_fuse_interface_entry_timeout(void *ptr)
+{
+    struct fuseparam_s *fuseparam=(struct fuseparam_s *) ptr;
+
+    return &fuseparam->entry_timeout;
+}
+
+struct timespec *get_fuse_interface_negative_timeout(void *ptr)
+{
+    struct fuseparam_s *fuseparam=(struct fuseparam_s *) ptr;
+
+    return &fuseparam->negative_timeout;
 }
 
 void close_fuse_interface(struct context_interface_s *interface)
@@ -969,21 +1002,13 @@ static void *mount_fuse_interface(uid_t uid, struct context_interface_s *interfa
 
     }
 
-    /*
-	construct the options to parse to mount command and session setup
-    */
+    /* construct the options to parse to mount command and session setup */
 
     snprintf(mountoptions, 256, "fd=%i,rootmode=%o,user_id=0,group_id=0,default_permissions,allow_other,max_read=%i", fuseparam->fd, 755 | S_IFDIR, 4096);
     snprintf(typestring, lentype, "fuse.%s", address->target.fuse.name);
     errno=0;
 
     mountflags=MS_NODEV | MS_NOEXEC | MS_NOSUID | MS_NOATIME;
-
-#ifdef MS_UNBINDABLE
-
-    //mountflags|=MS_UNBINDABLE;
-
-#endif
 
     if (mount(address->target.fuse.source, address->target.fuse.mountpoint, typestring, mountflags, (const void *) mountoptions)==0) {
 
@@ -1000,6 +1025,8 @@ static void *mount_fuse_interface(uid_t uid, struct context_interface_s *interfa
 	goto error;
 
     }
+
+    
 
     out:
 

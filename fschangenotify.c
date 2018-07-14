@@ -61,8 +61,6 @@
 
 #include "logging.h"
 
-extern struct fs_options_struct fs_options;
-
 struct list_watches_s {
     struct list_element_s	*head;
     struct list_element_s	*tail;

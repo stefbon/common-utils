@@ -47,6 +47,7 @@
 #include "skiplist-insert.h"
 #include "skiplist-seek.h"
 
+#include "simple-locking.h"
 #include "entry-management.h"
 #include "directory-management.h"
 
@@ -238,267 +239,132 @@ static void delete_entry(void *a, struct skiplist_struct *sl)
 
 }
 
-/* lock a directory read */
-
-int _lock_directory_read(struct directory_s *directory)
+void init_directory_readlock(struct directory_s *directory, struct simple_lock_s *lock)
 {
+    init_simple_readlock(&directory->locking, lock);
+}
 
+void init_directory_writelock(struct directory_s *directory, struct simple_lock_s *lock)
+{
+    init_simple_writelock(&directory->locking, lock);
+}
+
+struct simple_lock_s *_create_rlock_directory(struct directory_s *directory)
+{
+    struct simple_lock_s *lock=malloc(sizeof(struct simple_lock_s));
+
+    if (lock) {
+
+	init_directory_readlock(directory, lock);
+	lock->flags|=SIMPLE_LOCK_FLAG_ALLOCATED;
+	if (simple_lock(lock)==0) return lock;
+	free(lock);
+
+    }
+
+    return NULL;
+
+}
+
+struct simple_lock_s *_create_wlock_directory(struct directory_s *directory)
+{
+    struct simple_lock_s *lock=malloc(sizeof(struct simple_lock_s));
+
+    if (lock) {
+
+	init_directory_writelock(directory, lock);
+	lock->flags|=SIMPLE_LOCK_FLAG_ALLOCATED;
+	if (simple_lock(lock)==0) return lock;
+	free(lock);
+
+    }
+
+    return NULL;
+
+}
+
+int _lock_directory(struct directory_s *directory, struct simple_lock_s *lock)
+{
+    return simple_lock(lock);
+}
+
+int _rlock_directory(struct directory_s *directory, struct simple_lock_s *lock)
+{
+    init_directory_readlock(directory, lock);
+    return simple_lock(lock);
+}
+
+int _wlock_directory(struct directory_s *directory, struct simple_lock_s *lock)
+{
+    init_directory_writelock(directory, lock);
+    return simple_lock(lock);
+}
+
+int _unlock_directory(struct directory_s *directory, struct simple_lock_s *lock)
+{
+    int result=simple_unlock(lock);
+    // if (lock->flags & SIMPLE_LOCK_FLAG_ALLOCATED) free(lock);
+    return result;
+}
+
+int _upgradelock_directory(struct directory_s *directory, struct simple_lock_s *lock)
+{
+    return simple_upgradelock(lock);
+}
+
+int _prelock_directory(struct directory_s *directory, struct simple_lock_s *lock)
+{
     if (directory->flags & _DIRECTORY_FLAG_REMOVE) return -1;
-
-    /* increase the readers */
-
-    pthread_mutex_lock(&directory->mutex);
-
-    while (directory->lock & 3) {
-
-	pthread_cond_wait(&directory->cond, &directory->mutex);
-
-    }
-
-    directory->lock+=4;
-
-    pthread_mutex_unlock(&directory->mutex);
-
-    return 0;
-
+    return simple_prelock(lock);
 }
 
-/* lock a directory pre exclusive (=prevent more readers and exclusive access by any other thread) */
-
-int _lock_directory_preexcl(struct directory_s *directory)
-{
-
-    if (directory->flags & _DIRECTORY_FLAG_REMOVE) return -1;
-
-    /* set a lock to prepare the exclusive lock */
-
-    pthread_mutex_lock(&directory->mutex);
-
-    if (directory->lock & 1) {
-
-	if (directory->write_thread != pthread_self()) {
-
-	    /* some other thread else already got it */
-
-	    pthread_mutex_unlock(&directory->mutex);
-	    return -1;
-
-	}
-
-    } else {
-
-	directory->lock |= 1;
-	directory->write_thread = pthread_self();
-
-    }
-
-    pthread_mutex_unlock(&directory->mutex);
-
-    return 0;
-
-}
-
-/* lock a directory exclusive */
-
-int _lock_directory_excl(struct directory_s *directory)
-{
-
-    if (directory->flags & _DIRECTORY_FLAG_REMOVE) return -1;
-
-    /*
-	set a exclusive lock
-	only possible if:
-	- no readers
-	- no other thread has already exclusive acces and/or set the pre excl bit set
-    */
-
-    pthread_mutex_lock(&directory->mutex);
-
-    if (directory->lock & 1) {
-
-	/* preexclusive bit set */
-
-	if (directory->write_thread==pthread_self()) {
-
-	    /* we own the preexcl bit wait for readers to finish */
-
-	    while (directory->lock>>3 > 1) {
-
-		pthread_cond_wait(&directory->cond, &directory->mutex);
-
-	    }
-
-	    directory->lock |= 2;
-
-	} else {
-
-	    /* another thread owns the preexcl bit */
-
-	    pthread_mutex_unlock(&directory->mutex);
-	    return -1;
-
-	}
-
-    } else if (directory->lock & 2) {
-
-	if (directory->write_thread!=pthread_self()) {
-
-	    /* another thread has already locked it exclusive */
-
-	    pthread_mutex_unlock(&directory->mutex);
-	    return -1;
-
-	}
-
-	/* this thread owns the preexcl bit: ok */
-
-	directory->lock |= 1;
-
-    } else {
-
-	directory->lock |= 1;
-
-	/* wait for readers to finish */
-
-	while(directory->lock>>3 > 1) {
-
-	    pthread_cond_wait(&directory->cond, &directory->mutex);
-
-	}
-
-	directory->lock |= 2;
-	directory->write_thread = pthread_self();
-
-    }
-
-    pthread_mutex_unlock(&directory->mutex);
-
-    return 0;
-
-}
-
-int _unlock_directory_read(struct directory_s *directory)
-{
-
-    /* decrease the readers */
-
-    pthread_mutex_lock(&directory->mutex);
-
-    directory->lock-=4;
-
-    pthread_cond_broadcast(&directory->cond);
-    pthread_mutex_unlock(&directory->mutex);
-
-    return 0;
-
-}
-
-int _unlock_directory_preexcl(struct directory_s *directory)
-{
-
-    /* remove the pre excl lock */
-
-    pthread_mutex_lock(&directory->mutex);
-
-    if (directory->lock & 1) {
-
-	if (directory->lock & 2) {
-
-	    pthread_mutex_unlock(&directory->mutex);
-	    return -1;
-
-	} else {
-
-	    directory->lock -= 1;
-	    directory->write_thread = 0;
-	    pthread_cond_broadcast(&directory->cond);
-
-	}
-
-    } else {
-
-	pthread_mutex_unlock(&directory->mutex);
-	return -1;
-
-    }
-
-    pthread_mutex_unlock(&directory->mutex);
-
-    return 0;
-
-}
-
-int _unlock_directory_excl(struct directory_s *directory)
-{
-
-    /* set a exclusive lock */
-
-    pthread_mutex_lock(&directory->mutex);
-
-    if (directory->write_thread==pthread_self()) {
-
-	if (directory->lock & 1) directory->lock -= 1;
-	if (directory->lock & 2) directory->lock -= 2;
-	directory->write_thread = 0;
-	pthread_cond_broadcast(&directory->cond);
-
-    } else {
-
-	pthread_mutex_unlock(&directory->mutex);
-	return -1;
-
-    }
-
-    pthread_mutex_unlock(&directory->mutex);
-
-    return 0;
-
-}
 
 /* callbacks for the skiplist */
 
-static int lock_skiplist(struct skiplist_struct *sl, unsigned short flags)
+static void *create_rlock_skiplist(struct skiplist_struct *sl)
 {
     struct directory_s *directory=(struct directory_s *) ( ((char *) sl) - offsetof(struct directory_s, skiplist));
 
-    if (flags==_SKIPLIST_READLOCK) {
-
-	return _lock_directory_read(directory);
-
-    } else if (flags==_SKIPLIST_PREEXCLLOCK) {
-
-	return _lock_directory_preexcl(directory);
-
-    } else if (flags==_SKIPLIST_EXCLLOCK) {
-
-	return _lock_directory_excl(directory);
-
-    }
-
-    return -1;
-
+    return (void *) _create_rlock_directory(directory);
 }
 
-static int unlock_skiplist(struct skiplist_struct *sl, unsigned short flags)
+static void *create_wlock_skiplist(struct skiplist_struct *sl)
 {
     struct directory_s *directory=(struct directory_s *) ( ((char *) sl) - offsetof(struct directory_s, skiplist));
 
-    if (flags==_SKIPLIST_READLOCK) {
+    return (void *) _create_wlock_directory(directory);
+}
 
-	return _unlock_directory_read(directory);
+static int lock_skiplist(struct skiplist_struct *sl, void *ptr)
+{
+    struct directory_s *directory=(struct directory_s *) ( ((char *) sl) - offsetof(struct directory_s, skiplist));
+    struct simple_lock_s *lock=(struct simple_lock_s *) ptr;
 
-    } else if (flags==_SKIPLIST_PREEXCLLOCK) {
+    return _lock_directory(directory, lock);
+}
 
-	return _unlock_directory_preexcl(directory);
+static int unlock_skiplist(struct skiplist_struct *sl, void *ptr)
+{
+    struct directory_s *directory=(struct directory_s *) ( ((char *) sl) - offsetof(struct directory_s, skiplist));
+    struct simple_lock_s *lock=(struct simple_lock_s *) ptr;
 
-    } else if (flags==_SKIPLIST_EXCLLOCK) {
+    return _unlock_directory(directory, lock);
+}
 
-	return _unlock_directory_excl(directory);
+static int upgradelock_skiplist(struct skiplist_struct *sl, void *ptr)
+{
+    struct directory_s *directory=(struct directory_s *) ( ((char *) sl) - offsetof(struct directory_s, skiplist));
+    struct simple_lock_s *lock=(struct simple_lock_s *) ptr;
 
-    }
+    return _upgradelock_directory(directory, lock);
+}
 
-    return -1;
+static int prelock_skiplist(struct skiplist_struct *sl, void *ptr)
+{
+    struct directory_s *directory=(struct directory_s *) ( ((char *) sl) - offsetof(struct directory_s, skiplist));
+    struct simple_lock_s *lock=(struct simple_lock_s *) ptr;
 
+    return _prelock_directory(directory, lock);
 }
 
 static unsigned int count_entries(struct skiplist_struct *sl)
@@ -534,10 +400,14 @@ int init_directory(struct directory_s *directory, unsigned int *error)
     directory->inode=NULL;
     directory->count=0;
 
-    pthread_mutex_init(&directory->mutex, NULL);
-    pthread_cond_init(&directory->cond, NULL);
-    directory->lock=0;
-    directory->write_thread=0;
+    result=init_simple_locking(&directory->locking);
+
+    if (result==-1) {
+
+	logoutput_warning("init_directory: error initializing locking");
+	goto out;
+
+    }
 
     directory->first=NULL;
     directory->last=NULL;
@@ -546,19 +416,22 @@ int init_directory(struct directory_s *directory, unsigned int *error)
 
     result=init_skiplist(&directory->skiplist, 4, get_next_entry, get_prev_entry,
 			compare_entry, insert_before_entry, insert_after_entry, delete_entry,
-			lock_skiplist, unlock_skiplist, count_entries, first_entry, last_entry, error);
+			create_rlock_skiplist, create_wlock_skiplist,
+			lock_skiplist, unlock_skiplist, upgradelock_skiplist, prelock_skiplist, count_entries, first_entry, last_entry, error);
 
     if (result==-1) {
 
-	logoutput_error("init_directory: error %i initializing skiplist", *error);
+	logoutput_warning("init_directory: error %i initializing skiplist", *error);
 
     }
+
+    out:
 
     return result;
 
 }
 
-struct directory_s *_create_directory(struct inode_s *inode, void (* init_cb)(struct directory_s *directory), unsigned int lock, unsigned int *error)
+struct directory_s *_create_directory(struct inode_s *inode, void (* init_cb)(struct directory_s *directory), unsigned int *error)
 {
     struct directory_s *directory=NULL;
 
@@ -568,7 +441,6 @@ struct directory_s *_create_directory(struct inode_s *inode, void (* init_cb)(st
 	int result=0;
 
 	memset(directory, 0, sizeof(struct directory_s));
-
 	result=init_directory(directory, error);
 
 	if (result==-1) {
@@ -578,7 +450,6 @@ struct directory_s *_create_directory(struct inode_s *inode, void (* init_cb)(st
 
 	} else {
 
-	    directory->lock=lock;
 	    directory->inode=inode;
 
 	    (* init_cb)(directory);
@@ -610,10 +481,7 @@ void free_directory(struct directory_s *directory)
 {
     clear_skiplist(&directory->skiplist);
     destroy_lock_skiplist(&directory->skiplist);
-
-    pthread_mutex_destroy(&directory->mutex);
-    pthread_cond_destroy(&directory->cond);
-
+    clear_simple_locking(&directory->locking);
     free_pathcalls(&directory->pathcalls);
 
 }

@@ -254,6 +254,9 @@ void set_fs_special(struct inode_s *inode)
 void create_desktopentry_file(char *path, struct entry_s *parent, struct workspace_mount_s *workspace)
 {
     struct stat st;
+    struct directory_s *directory=get_directory(parent->inode);
+
+    if (! directory) return;
 
     logoutput("create_desktopentry_file: path %s", path);
 
@@ -265,7 +268,7 @@ void create_desktopentry_file(char *path, struct entry_s *parent, struct workspa
 	xname.len=strlen(xname.name);
 	calculate_nameindex(&xname);
 
-	struct entry_s *entry=_fs_common_create_entry_unlocked(workspace, parent, &xname, &st, 0, &error);
+	struct entry_s *entry=_fs_common_create_entry(workspace, directory, &xname, &st, 0, &error);
 
 	if (entry) {
 	    union datalink_u link;
@@ -281,3 +284,16 @@ void create_desktopentry_file(char *path, struct entry_s *parent, struct workspa
 
 }
 
+int check_entry_special(struct inode_s *inode)
+{
+    int result=-1;
+
+    if (! S_ISDIR(inode->mode)) {
+
+	result=(inode->fs==&fs) ? 0 : -1;
+
+    }
+
+    return result;
+
+}

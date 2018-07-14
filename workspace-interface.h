@@ -86,7 +86,7 @@ struct context_interface_s {
     } backend;
 };
 
-inline unsigned int get_interface_option(struct context_interface_s *interface, const char *name, void *reply, size_t len)
+static inline unsigned int get_interface_option_integer(struct context_interface_s *interface, const char *name, int *reply)
 {
     struct context_option_s option;
     unsigned int result=0;
@@ -103,6 +103,7 @@ inline unsigned int get_interface_option(struct context_interface_s *interface, 
     }
 
     return 0;
+
 }
 
 #endif

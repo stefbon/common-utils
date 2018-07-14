@@ -167,8 +167,6 @@ static unsigned int update_counters(struct vector_dirnode_struct *vector, unsign
 static unsigned int add_dirnode_sl(struct skiplist_struct *sl, struct vector_dirnode_struct *vector, unsigned int ctr_left, void *data, int newlevel)
 {
 
-    // logoutput("add_dirnode_sl: new level %i", newlevel);
-
     if ( ! sl->dirnode) {
 	struct dirnode_struct *head_dirnode=NULL;
 
@@ -420,35 +418,45 @@ static void *insert_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, un
     int diff=0;
     int level;
     struct vector_dirnode_struct vector;
-    unsigned char exclusive=0;
     unsigned int search_row=0;
     unsigned int ctr=0;
+    void *ptr=NULL;
 
-    sl->ops.lock(sl, _SKIPLIST_READLOCK);
+    /* what kind of lock (read or write) this is is determined by the caller */
 
+    ptr=sl->ops.create_rlock(sl);
     init_vector(&vector);
     *error=ENOENT;
 
     if (sl->ops.count(sl)==0) {
 
-	/* when empty just add it and leave */
+	/* when empty just add it and leave
+	    make sure it's a write lock */
 
-	sl->ops.lock(sl, _SKIPLIST_EXCLLOCK);
-	exclusive=1;
+	if (sl->ops.upgradelock(sl, ptr)==0) {
 
-	sl->ops.insert_after(data, NULL, sl);
+	    sl->ops.insert_after(data, NULL, sl);
 
-	if (row) *row=1;
-	found=data;
-	*error=0;
+	    if (row) *row=1;
+	    found=data;
+	    *error=0;
 
-	goto unlock;
+	    goto unlock;
+
+	} else {
+
+	    *error=EAGAIN;
+	    goto unlock;
+
+	}
 
     }
 
     if (sl->dirnode==NULL || newlevel>sl->dirnode->level) {
 
-	if (sl->ops.lock(sl, _SKIPLIST_PREEXCLLOCK)==-1) {
+	/* it's required to add a new lane, make sure the lock is already pre write to block any readers */
+
+	if (sl->ops.prelock(sl, ptr)==-1) {
 
 	    logoutput_warning("insert_nonempty_sl: newlevel %i prepare lock exclusive failed", newlevel);
 
@@ -460,8 +468,6 @@ static void *insert_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, un
 	    logoutput_debug("insert_nonempty_sl: newlevel %i prepare lock exclusive success", newlevel);
 
 	}
-
-	exclusive=1;
 
     }
 
@@ -651,15 +657,7 @@ static void *insert_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, un
 
 	if (*error==ENOENT) {
 
-	    if (exclusive==1) {
-
-		sl->ops.lock(sl, _SKIPLIST_EXCLLOCK);
-
-	    } else {
-
-		pthread_mutex_lock(&sl->mutex);
-
-	    }
+	    sl->ops.lock(sl, ptr);
 
 	    found=data;
 
@@ -720,29 +718,13 @@ static void *insert_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, un
 
 	    }
 
-	    if (exclusive==1) {
-
-		sl->ops.unlock(sl, _SKIPLIST_EXCLLOCK);
-		exclusive=0;
-
-	    } else {
-
-		pthread_mutex_unlock(&sl->mutex);
-
-	    }
-
 	}
 
     }
 
     unlock:
 
-    if (exclusive==1) {
-
-	sl->ops.unlock(sl, _SKIPLIST_EXCLLOCK);
-	exclusive=0;
-
-    }
+    sl->ops.unlock(sl, ptr);
 
     if (vector.lockset>0) {
 
@@ -753,10 +735,7 @@ static void *insert_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, un
 
     }
 
-    sl->ops.unlock(sl, _SKIPLIST_READLOCK);
-
     destroy_vector_lanes(&vector);
-
     if (row) *row=search_row;
 
     return found;

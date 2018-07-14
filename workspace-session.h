@@ -20,6 +20,8 @@
 #ifndef FS_WORKSPACE_SESSION_H
 #define FS_WORKSPACE_SESSION_H
 
+#include "simple-hash.h"
+
 int initialize_fuse_users(unsigned int *error);
 void free_fuse_users();
 
@@ -32,8 +34,11 @@ void free_fuse_user(void *data);
 struct fuse_user_s *lookup_fuse_user(uid_t uid);
 struct fuse_user_s *get_next_fuse_user(void **index, unsigned int *hashvalue);
 
-void lock_users_hash();
-void unlock_users_hash();
+void init_rlock_users_hash(struct simple_lock_s *l);
+void init_wlock_users_hash(struct simple_lock_s *l);
+
+void lock_users_hash(struct simple_lock_s *l);
+void unlock_users_hash(struct simple_lock_s *l);
 
 unsigned char use_workspace_base(struct fuse_user_s *user, struct workspace_base_s *base);
 char *get_mountpoint_workspace_base(struct fuse_user_s *user, struct workspace_base_s *base, struct pathinfo_s *pathinfo);

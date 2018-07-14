@@ -64,6 +64,7 @@ static struct fuse_fs_s virtual_dir_fs;
 static struct fuse_fs_s virtual_nondir_fs;
 static unsigned char done=0;
 static pthread_mutex_t done_mutex=PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t datalink_mutex=PTHREAD_MUTEX_INITIALIZER;
 static struct statfs default_statfs;
 
 void use_virtual_fs(struct service_context_s *context, struct inode_s *inode);
@@ -91,35 +92,36 @@ static union datalink_u *_get_datalink_dir(struct inode_s *inode)
 
 static void _set_datalink_dir(struct inode_s *inode, union datalink_u *link)
 {
-    struct directory_s *directory=get_directory(inode);
-    struct directory_s *real_directory=NULL;
+    struct directory_s *directory=NULL;
 
-    pthread_mutex_lock(&directory->mutex);
+    pthread_mutex_lock(&datalink_mutex);
 
-    real_directory=get_directory(inode);
+    directory=get_directory(inode);
 
-    if (real_directory->flags & _DIRECTORY_FLAG_DUMMY) {
+    if (directory->flags & _DIRECTORY_FLAG_DUMMY) {
 	unsigned int error=0;
 
-	real_directory=(* directory->dops->create_directory)(inode, 0, &error);
-
-	if (! real_directory) {
-
-	    pthread_mutex_unlock(&directory->mutex);
-	    return;
-
-	}
-
-	memcpy(&real_directory->link, link, sizeof(union datalink_u));
+	directory=(* directory->dops->create_directory)(inode, &error);
+	if (directory) memcpy(&directory->link, link, sizeof(union datalink_u));
 
     } else {
 
-	memcpy(&real_directory->link, link, sizeof(union datalink_u));
+	memcpy(&directory->link, link, sizeof(union datalink_u));
 
     }
 
-    pthread_mutex_unlock(&directory->mutex);
+    pthread_mutex_unlock(&datalink_mutex);
 
+}
+
+static int _lock_datalink(struct inode_s *inode)
+{
+    return pthread_mutex_lock(&datalink_mutex);
+}
+
+static int _unlock_datalink(struct inode_s *inode)
+{
+    return pthread_mutex_unlock(&datalink_mutex);
 }
 
 static void _fs_forget(struct inode_s *inode)
@@ -312,6 +314,8 @@ static void _set_virtual_fs(struct fuse_fs_s *fs)
 {
 
     fs->get_count=_fs_get_count;
+    fs->lock_datalink=_lock_datalink;
+    fs->unlock_datalink=_unlock_datalink;
 
     fs->forget=_fs_forget;
     fs->getattr=_fs_getattr;
