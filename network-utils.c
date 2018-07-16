@@ -40,6 +40,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 
+#define LOGGING
 #include "logging.h"
 
 unsigned char check_family_ip_address(char *address, const char *what)
@@ -192,17 +193,27 @@ char *get_connection_hostname(unsigned int fd, unsigned char what, unsigned int 
     https://stackoverflow.com/questions/37885831/ubuntu-linux-send-file-descriptor-with-unix-domain-socket#37885976
 */
 
-void init_fd_msg(struct msghdr *message, int fd)
+unsigned int get_msg_controllen(struct msghdr *message, const char *what)
+{
+
+    if (strcmp(what, "int")==0) {
+
+	return CMSG_SPACE(sizeof(int));
+
+    }
+
+    return 0;
+}
+
+void init_fd_msg(struct msghdr *message, char *buffer, unsigned int size, int fd)
 {
     struct cmsghdr *ctrl_message = NULL;
-    int size=CMSG_SPACE(sizeof(int)); /* storage space needed for an ancillary element with a paylod of length is CMSG_SPACE(sizeof(length)) */
-    char buffer[size];
 
     /* init space ancillary data */
 
     memset(buffer, 0, size);
-    socket_message.msg_control = buffer;
-    socket_message.msg_controllen = size;
+    message->msg_control = buffer;
+    message->msg_controllen = size;
 
     /* assign fd to a single ancillary data element */
 
@@ -225,11 +236,15 @@ int read_fd_msg(struct msghdr *message)
     struct cmsghdr *ctrl_message = NULL;
     int fd=-1;
 
+    logoutput("read_fd_msg");
+
     /* iterate ancillary elements */
 
     for (ctrl_message = CMSG_FIRSTHDR(message); ctrl_message != NULL; ctrl_message = CMSG_NXTHDR(message, ctrl_message)) {
 
 	if ((ctrl_message->cmsg_level == SOL_SOCKET) && (ctrl_message->cmsg_type == SCM_RIGHTS)) {
+
+	    logoutput("read_fd_msg: found ctrl message");
 
 	    fd = *((int *) CMSG_DATA(ctrl_message));
 	    break;
