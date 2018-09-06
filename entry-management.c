@@ -40,14 +40,15 @@
 #endif
 
 #include "entry-management.h"
+#include "workerthreads.h"
+#include "simple-locking.h"
 
 #ifndef SIZE_INODE_HASHTABLE
 #define SIZE_INODE_HASHTABLE				10240
 #endif
 
 #include "logging.h"
-
-extern const char *dotname;
+extern unsigned char get_fs_count(struct inode_s *inode);
 
 static struct inode_s **inode_hash_table=NULL;
 static pthread_mutex_t inode_table_mutex=PTHREAD_MUTEX_INITIALIZER;
@@ -55,6 +56,11 @@ static pthread_mutex_t inode_table_mutex=PTHREAD_MUTEX_INITIALIZER;
 static uint64_t inoctr=FUSE_ROOT_ID;
 static pthread_mutex_t inodectrmutex=PTHREAD_MUTEX_INITIALIZER;
 static unsigned long long nrinodes=0;
+
+static struct inode_s *inode_tobedeleted=NULL;
+static pthread_mutex_t inode_tobedeleted_mutex=PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t inode_tobedeleted_cond=PTHREAD_COND_INITIALIZER;
+static pthread_t inode_remove_thread=0;
 
 #define NAMEINDEX_ROOT1						92			/* number of valid chars*/
 #define NAMEINDEX_ROOT2						8464			/* 92 ^ 2 */
@@ -140,11 +146,12 @@ void add_inode_hashtable(struct inode_s *inode, void (*cb) (void *data), void *d
     hash = inoctr % SIZE_INODE_HASHTABLE;
 
     inode->id_next = inode_hash_table[hash];
+    inode->id_next = NULL;
     inode_hash_table[hash] = inode;
 
-    (* cb) (data);
-
     pthread_mutex_unlock(&inode_table_mutex);
+
+    (* cb) (data);
 
 }
 
@@ -256,9 +263,11 @@ void init_inode(struct inode_s *inode)
 
     memset(inode, 0, sizeof(struct inode_s));
 
+    inode->flags=0;
     inode->nlookup=0;
     inode->ino=0;
     inode->id_next=NULL;
+    inode->id_prev=NULL;
 
     inode->alias=NULL;
 
@@ -277,8 +286,31 @@ void init_inode(struct inode_s *inode)
     inode->stim.tv_sec=0;
     inode->stim.tv_nsec=0;
 
-    inode->fs=NULL;
-    inode->link_type=0;
+    inode->inode_link=NULL;
+
+}
+
+void get_inode_stat(struct inode_s *inode, struct stat *st)
+{
+
+    st->st_mode=inode->mode;
+    st->st_nlink=inode->nlink;
+
+    st->st_uid=inode->uid;
+    st->st_gid=inode->gid;
+
+    st->st_size=inode->size;
+
+    st->st_mtim.tv_sec=inode->mtim.tv_sec;
+    st->st_mtim.tv_nsec=inode->mtim.tv_nsec;
+
+    st->st_ctim.tv_sec=inode->ctim.tv_sec;
+    st->st_ctim.tv_nsec=inode->ctim.tv_nsec;
+
+    st->st_atim.tv_sec=inode->atim.tv_sec;
+    st->st_atim.tv_nsec=inode->atim.tv_nsec;
+    st->st_rdev=0;
+    st->st_dev=0;
 
 }
 
@@ -315,6 +347,12 @@ struct inode_s *create_inode()
 
 }
 
+void free_inode(struct inode_s *inode)
+{
+    if (inode->inode_link) free(inode->inode_link);
+    free(inode);
+}
+
 struct inode_s *find_inode(uint64_t ino)
 {
     size_t hash=ino % SIZE_INODE_HASHTABLE;
@@ -337,10 +375,99 @@ struct inode_s *find_inode(uint64_t ino)
 
 }
 
-struct inode_s *forget_inode(uint64_t ino, void (*cb) (void *data), void *data)
+static void remove_inodes_thread(void *ptr)
+{
+    struct context_interface_s *interface=(struct context_interface_s *) ptr;
+    struct inode_s *inode=NULL;
+
+    pthread_mutex_lock(&inode_tobedeleted_mutex);
+
+    while (inode_remove_thread>0) {
+
+	pthread_cond_wait(&inode_tobedeleted_cond, &inode_tobedeleted_mutex);
+
+    }
+
+    inode_remove_thread=pthread_self();
+    pthread_mutex_unlock(&inode_tobedeleted_mutex);
+
+    inode=inode_tobedeleted;
+
+    while(inode) {
+
+	inode_tobedeleted=inode->id_next;
+
+	if (inode->alias && (inode->flags & FORGET_INODE_FLAG_REMOVE_ENTRY)) {
+	    struct entry_s *entry=inode->alias;
+	    struct entry_s *parent=(entry) ? entry->parent : NULL;
+
+	    logoutput_info("remove_inodes_thread: remove %lli", inode->ino);
+
+	    if (inode->flags & FORGET_INODE_FLAG_NOTIFY_VFS) {
+
+		if (entry) notify_VFS_delete(interface->ptr, parent->inode->ino, inode->ino, entry->name.name, entry->name.len);
+
+	    }
+
+	    logoutput_info("remove_inodes_thread: A");
+
+	    if (entry)  {
+
+		if (parent) {
+		    struct simple_lock_s wlock;
+
+		    logoutput_info("remove_inodes_thread: B");
+
+		    if (wlock_directory(parent->inode, &wlock)==0) {
+			//struct directory_s *directory=get_directory(parent->inode);
+			unsigned int error=0;
+
+			logoutput_info("remove_inodes_thread: C");
+			remove_entry(entry, &error); /* remove from skiplist (=directory) */
+			logoutput_info("remove_inodes_thread: D");
+			unlock_directory(parent->inode, &wlock);
+
+		    }
+
+		}
+
+		entry->inode=NULL;
+		inode->alias=NULL;
+		destroy_entry(entry); /* free */
+
+	    }
+
+	}
+
+	free_inode(inode);
+	inode=inode_tobedeleted;
+
+    }
+
+    pthread_mutex_lock(&inode_tobedeleted_mutex);
+    inode_remove_thread=0;
+    pthread_cond_broadcast(&inode_tobedeleted_cond);
+    pthread_mutex_unlock(&inode_tobedeleted_mutex);
+
+}
+
+static void start_remove_inode_thread(struct context_interface_s *interface)
+{
+    unsigned int error=0;
+    work_workerthread(NULL, 0, remove_inodes_thread, (void *)interface, &error);
+}
+
+static void cb_dummy(void *data)
+{
+}
+
+struct inode_s *forget_inode(struct context_interface_s *interface, uint64_t ino, uint64_t nlookup, void (*cb) (void *data), void *data, unsigned int flags)
 {
     size_t hash=ino % SIZE_INODE_HASHTABLE;
-    struct inode_s *inode=NULL, *prev=NULL;
+    struct inode_s *inode=NULL;
+
+    if (cb==NULL) cb=cb_dummy;
+    if (ino==0 || interface==NULL) return NULL;
 
     pthread_mutex_lock(&inode_table_mutex);
 
@@ -349,74 +476,209 @@ struct inode_s *forget_inode(uint64_t ino, void (*cb) (void *data), void *data)
     while(inode) {
 
 	if (inode->ino==ino) {
+	    struct inode_s *prev=NULL;
+	    struct inode_s *next=NULL;
 
-	    if (prev) {
+	    if (inode->nlookup < nlookup && nlookup>0) {
 
-		prev->id_next=inode->id_next;
-
-	    } else {
-
-		/* no prev: it's the first */
-
-		inode_hash_table[hash]=inode->id_next;
+		inode->nlookup -= nlookup;
+		inode=NULL;
+		break;
 
 	    }
 
-	    inode->id_next=NULL;
+	    inode->nlookup=0;
+	    prev=inode->id_prev;
+	    next=inode->id_next;
 
+	    if (prev) {
+
+		prev->id_next=next;
+
+	    } else {
+
+		/* no prev: it must be the first */
+
+		inode_hash_table[hash]=next;
+
+	    }
+
+	    if (next) next->id_prev=prev;
+	    inode->id_next=NULL;
+	    inode->id_prev=NULL;
 	    (* cb) (data);
 
 	    break;
 
 	}
 
-	prev=inode;
 	inode=inode->id_next;
 
     }
 
     pthread_mutex_unlock(&inode_table_mutex);
 
+    if (inode) {
+
+	if (flags & FORGET_INODE_FLAG_QUEUE) {
+
+	    pthread_mutex_lock(&inode_tobedeleted_mutex);
+
+	    inode->id_next=inode_tobedeleted;
+	    inode->id_prev=NULL;
+	    inode_tobedeleted=inode;
+	    inode->flags |= FORGET_INODE_FLAG_DELETED;
+	    if (flags & FORGET_INODE_FLAG_REMOVE_ENTRY) inode->flags |= FORGET_INODE_FLAG_REMOVE_ENTRY;
+
+	    inode=NULL;
+	    start_remove_inode_thread(interface);
+
+	    pthread_mutex_unlock(&inode_tobedeleted_mutex);
+
+	}
+
+    }
+
     return inode;
 
 }
 
-void remove_inode(struct inode_s *inode)
+void remove_inode(struct context_interface_s *interface, struct inode_s *inode)
 {
-    uint64_t ino=inode->ino;
-    size_t hash=ino % SIZE_INODE_HASHTABLE;
-    struct inode_s *tmp_inode=NULL, *prev=NULL;
+    size_t hash=inode->ino % SIZE_INODE_HASHTABLE;
+    struct inode_s *prev=NULL;
+    struct inode_s *next=NULL;
+
+    if (inode==NULL || interface==NULL) return;
 
     pthread_mutex_lock(&inode_table_mutex);
 
-    tmp_inode=inode_hash_table[hash];
+    prev=inode->id_prev;
+    next=inode->id_next;
 
-    while(inode) {
+    if (prev) {
 
-	if (tmp_inode==inode) {
+	prev->id_next=next;
 
-	    if (prev) {
+    } else {
 
-		prev->id_next=tmp_inode->id_next;
+	/* no prev: it must be the first */
 
-	    } else {
-
-		/* no prev: it's the first */
-
-		inode_hash_table[hash]=tmp_inode->id_next;
-
-	    }
-
-	    inode->id_next=NULL;
-	    break;
-
-	}
-
-	prev=tmp_inode;
-	tmp_inode=tmp_inode->id_next;
+	inode_hash_table[hash]=next;
 
     }
 
+    if (next) next->id_prev=prev;
+    inode->id_next=NULL;
+    inode->id_prev=NULL;
+
     pthread_mutex_unlock(&inode_table_mutex);
+
+    if (inode) {
+
+	pthread_mutex_lock(&inode_tobedeleted_mutex);
+
+	inode->id_next=inode_tobedeleted;
+	inode->id_prev=NULL;
+	inode_tobedeleted=inode;
+	inode->flags |= FORGET_INODE_FLAG_DELETED;
+	inode->flags |= FORGET_INODE_FLAG_REMOVE_ENTRY;
+	inode->flags |= FORGET_INODE_FLAG_NOTIFY_VFS;
+
+	inode=NULL;
+	start_remove_inode_thread(interface);
+
+	pthread_mutex_unlock(&inode_tobedeleted_mutex);
+
+    }
+
+}
+
+struct inode_link_s *create_inode_link_data(struct inode_s *inode, void *data, unsigned char type)
+{
+    struct inode_link_s *link=malloc(sizeof(struct inode_link_s));
+
+    if (link) {
+
+	link->type=type;
+	link->link.data=data;
+	inode->inode_link=link;
+
+    }
+
+    return link;
+
+}
+
+struct inode_link_s *create_inode_link_id(struct inode_s *inode, uint64_t id)
+{
+    struct inode_link_s *link=malloc(sizeof(struct inode_link_s));
+
+    if (link) {
+
+	link->type=INODE_LINK_TYPE_ID;
+	link->link.id=id;
+	inode->inode_link=link;
+
+    }
+
+    return link;
+
+}
+
+void log_inode_information(struct inode_s *inode, uint64_t what)
+{
+    if (what & INODE_INFORMATION_OWNER) logoutput("log_inode_information: owner :%i", inode->uid);
+    if (what & INODE_INFORMATION_GROUP) logoutput("log_inode_information: owner :%i", inode->gid);
+    if (what & INODE_INFORMATION_NAME) {
+	struct entry_s *entry=inode->alias;
+
+	if (entry) {
+
+	    logoutput("log_inode_information: entry name :%.*s", entry->name.len, entry->name.name);
+
+	} else {
+
+	    logoutput("log_inode_information: no entry");
+
+	}
+
+    }
+    if (what & INODE_INFORMATION_NLOOKUP) logoutput("log_inode_information: nlookup :%li", inode->nlookup);
+    if (what & INODE_INFORMATION_MODE) logoutput("log_inode_information: mode :%i", inode->mode);
+    if (what & INODE_INFORMATION_NLINK) logoutput("log_inode_information: nlink :%i", inode->nlink);
+    if (what & INODE_INFORMATION_SIZE) logoutput("log_inode_information: size :%i", inode->size);
+    if (what & INODE_INFORMATION_MTIM) logoutput("log_inode_information: mtim %li.%li", inode->mtim.tv_sec, inode->mtim.tv_nsec);
+    if (what & INODE_INFORMATION_CTIM) logoutput("log_inode_information: ctim %li.%li", inode->ctim.tv_sec, inode->ctim.tv_nsec);
+    if (what & INODE_INFORMATION_ATIM) logoutput("log_inode_information: atim %li.%li", inode->atim.tv_sec, inode->atim.tv_nsec);
+    if (what & INODE_INFORMATION_STIM) logoutput("log_inode_information: stim %li.%li", inode->stim.tv_sec, inode->stim.tv_nsec);
+
+    if (what & INODE_INFORMATION_INODE_LINK) {
+
+	if (inode->inode_link) {
+
+	    logoutput("log_inode_information: inode_link type %i", inode->inode_link->type);
+
+	} else {
+
+	    logoutput("log_inode_information: no inode_link");
+
+	}
+
+    }
+
+    if (what & INODE_INFORMATION_FS_COUNT) {
+
+	if (inode->fs) {
+
+	    logoutput("log_inode_information: fs count %i", get_fs_count(inode));
+
+	} else {
+
+	    logoutput("log_inode_information: no fs");
+
+	}
+
+    }
 
 }

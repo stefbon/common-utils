@@ -34,6 +34,7 @@
 #include <sys/stat.h>
 #include <sys/param.h>
 #include <sys/fsuid.h>
+#include <sys/mount.h>
 
 #include <pthread.h>
 
@@ -58,7 +59,6 @@
 
 extern const char *dotdotname;
 extern const char *dotname;
-extern int read_fuse_event(void *ptr, unsigned int *error);
 
 void adjust_pathmax(struct workspace_mount_s *w, unsigned int len)
 {
@@ -82,8 +82,9 @@ void clear_workspace_mount(struct workspace_mount_s *workspace)
     directory=(* directory->dops->remove_directory)(&workspace->rootinode, &error);
 
     if (directory) {
+	struct service_context_s *context=workspace->context;
 
-	clear_directory(directory, NULL, NULL);
+	clear_directory(&context->interface, directory, NULL, NULL);
 	destroy_directory(directory);
 
     }
@@ -264,4 +265,28 @@ int get_path_root(struct inode_s *inode, struct fuse_path_s *fpath)
 struct workspace_mount_s *get_container_workspace(struct list_element_s *list)
 {
     return (list) ? (struct workspace_mount_s *) ( ((char *) list) - offsetof(struct workspace_mount_s, list)) : NULL;
+}
+
+void create_personal_workspace_mount(struct workspace_mount_s *w)
+{
+    struct fuse_user_s *user=w->user;
+    struct passwd *pw=getpwuid(user->uid);
+
+    if (pw) {
+	unsigned int len = 2 + strlen(pw->pw_dir) + strlen("Network");
+	char path[len];
+
+	if (snprintf(path, len, "%s/Network", pw->pw_dir)>0) {
+
+	    /* path may not exist ... ignore any error */
+
+	    mkdir(path, S_IFDIR | S_IRUSR | S_IXUSR | S_IWUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+	    umount(path);
+
+	    mount(w->mountpoint.path, path, NULL, MS_BIND, NULL);
+
+	}
+
+    }
+
 }

@@ -30,6 +30,7 @@ struct fuse_request_s {
     struct context_interface_s			*interface;
     uint32_t					opcode;
     unsigned int				flags;
+    unsigned char				(* is_interrupted)(struct fuse_request_s *request);
     unsigned int				error;
     uint64_t					unique;
     uint64_t					ino;
@@ -75,6 +76,7 @@ struct timespec *get_fuse_interface_attr_timeout(void *ptr);
 struct timespec *get_fuse_interface_entry_timeout(void *ptr);
 struct timespec *get_fuse_interface_negative_timeout(void *ptr);
 
-size_t add_direntry_buffer(char *buffer, size_t size, off_t offset, struct name_s *xname, struct stat *st, unsigned int *error);
+size_t add_direntry_buffer(void *ptr, char *buffer, size_t size, off_t offset, struct name_s *xname, struct stat *st, unsigned int *error);
+size_t add_direntry_plus_buffer(void *ptr, char *buffer, size_t size, off_t offset, struct name_s *xname, struct stat *st, unsigned int *error);
 
 #endif

@@ -47,6 +47,81 @@
 #include "utils.h"
 #include "localsocket.h"
 
+static int default_accept(struct fs_connection_s *conn, struct sockaddr *addr, int *len)
+{
+    return accept(conn->fd, addr, len);
+}
+static int default_bind(struct fs_connection_s *conn, struct sockaddr *addr, int *len, int sock)
+{
+    return bind(conn->fd, addr, len);
+}
+static int default_close(struct fs_connection_s *conn)
+{
+    return close(conn->fd);
+}
+static int default_connect(struct fs_connection_s *conn, struct sockaddr *addr, int *len)
+{
+    return connect(conn->fd, addr, len);
+}
+static int default_getpeername(struct fs_connection_s *conn, struct sockaddr *addr, int *len)
+{
+    return getpeername(conn->fd, addr, len);
+}
+static int default_gethostname(struct fs_connection_s *conn, struct sockaddr *addr, int *len)
+{
+    return gethostname(conn->fd, addr, len);
+}
+static int default_getsockopt(struct fs_connection_s *conn, int level, SOCKOPT n, char *v, int *l)
+{
+    return gethostname(conn->fd, level, n, v, l);
+}
+static int default_listen(struct fs_connection_s *conn, int len)
+{
+    return listen(conn->fd, len);
+}
+static int default_recv(struct fs_connection_s *conn, char *buffer, unsigned int size, unsigned int flags)
+{
+    return recv(conn->fd, buffer, size, flags);
+}
+static int default_send(struct fs_connection_s *conn, char *buffer, unsigned int size, unsigned int flags)
+{
+    return send(conn->fd, buffer, size, flags);
+}
+static int default_setsockopt(struct fs_connection_s *conn, int level, SOCKOPT n, char v, int l)
+{
+    return gethostname(conn->fd, level, n, v, l);
+}
+static int default_socket(int af, int type, int protocol)
+{
+    return socket(af, type, protocol);
+}
+static int default_start()
+{
+    return 0; /* default does not require initialization */
+}
+static int default_finish()
+{
+    return 0; /* default does not require cleanup etc */
+}
+
+static socket_ops_s default_sops = {
+    .type				=	SOCKET_OPS_TYPE_UNIX,
+    .accept				=	default_accept,
+    .bind				=	default_bind,
+    .close				=	default_close,
+    .connect				=	default_connect,
+    .getpeername			=	default_getpeername,
+    .gethostname			=	default_gethostname,
+    .getsockopt				=	default_getsockopt,
+    .listen				=	default_listen,
+    .recv				=	default_recv,
+    .send				=	default_send,
+    .setsockopt				=	default_setsockopt,
+    .socket				=	default_socket,
+    .start				=	default_start,
+    .finish				=	default_finish,
+};
+
 int create_socket_path(struct pathinfo_s *pathinfo)
 {
     char path[pathinfo->len + 1];
@@ -147,8 +222,10 @@ void init_cb_dummy(struct fs_connection_s *conn)
 {
 }
 
-void init_connection(struct fs_connection_s *conn, unsigned char type)
+void init_connection(struct fs_connection_s *conn, struct socket_opts_s *sops, unsigned char type)
 {
+
+    if (sops==NULL) sops=&default_sops;
 
     memset(conn, 0, sizeof(struct fs_connection_s));
     conn->type=type;
@@ -157,6 +234,7 @@ void init_connection(struct fs_connection_s *conn, unsigned char type)
     conn->data=NULL;
     conn->list.next=NULL;
     conn->list.prev=NULL;
+    conn->sops=sops;
 
     if (type==FS_CONNECTION_TYPE_LOCALSERVER) {
 
@@ -188,7 +266,7 @@ static int accept_local_connection(int sfd, void *data, uint32_t events)
 
     s_len=sizeof(struct sockaddr_un);
 
-    fd=accept4(sfd, (struct sockaddr *) &local, &s_len, SOCK_NONBLOCK);
+    fd=(* s_conn->accept)(sfd, (struct sockaddr *) &local, &s_len);
     // fd=accept4(sfd, (struct sockaddr *) &local, &s_len, 0);
 
     if (fd==-1) {
@@ -202,7 +280,7 @@ static int accept_local_connection(int sfd, void *data, uint32_t events)
 
     s_len=sizeof(cred);
 
-    if (getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &s_len)==-1) {
+    if ((* s_conn->getsockopt)(s_conn, SOL_SOCKET, SO_PEERCRED, &cred, &s_len)==-1) {
 
 	logoutput("accept_local_connection: error %i geting socket credentials (%s)", errno, strerror(errno));
 	goto disconnect;
@@ -222,6 +300,7 @@ static int accept_local_connection(int sfd, void *data, uint32_t events)
 
     c_conn->fd=(unsigned int) fd;
     c_conn->ops.client.server=s_conn;
+    c_conn->sops=s_conn->sops; /* use the same socket ops */
 
     pthread_mutex_lock(&s_conn->ops.server.mutex);
     add_list_element_first(&s_conn->ops.server.head, &s_conn->ops.server.tail, &c_conn->list);
@@ -246,6 +325,11 @@ static int accept_local_connection(int sfd, void *data, uint32_t events)
 
 }
 
+int connect_remotesocket(struct fs_connection_s *conn, const struct sockaddr *addr, int len)
+{
+    return (* conn->connect)(conn, addr, len);
+}
+
 int create_local_serversocket(char *path, struct fs_connection_s *conn, struct beventloop_s *loop, struct fs_connection_s *(* accept_cb)(uid_t uid, gid_t gid, pid_t pid, struct fs_connection_s *s_conn), unsigned int *error)
 {
     int result=-1;
@@ -268,7 +352,7 @@ int create_local_serversocket(char *path, struct fs_connection_s *conn, struct b
 
     /* add socket */
 
-    fd=socket(PF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0);
+    fd=(* conn->socket)(PF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0);
 
     if (fd==-1) {
 
@@ -285,7 +369,7 @@ int create_local_serversocket(char *path, struct fs_connection_s *conn, struct b
     conn->socket.local.sun_family=AF_UNIX;
     snprintf(conn->socket.local.sun_path, sizeof(conn->socket.local.sun_path), path);
 
-    if (bind(conn->fd, (struct sockaddr *) &conn->socket.local, sizeof(struct sockaddr_un))==-1) {
+    if ((* conn->bind)(conn->fd, (struct sockaddr *) &conn->socket.local, sizeof(struct sockaddr_un))==-1) {
 
         *error=errno;
 	close(conn->fd);
@@ -296,7 +380,7 @@ int create_local_serversocket(char *path, struct fs_connection_s *conn, struct b
 
     /* listen */
 
-    if (listen(conn->fd, LISTEN_BACKLOG)==-1 ) {
+    if ((* conn->listen)(conn->fd, LISTEN_BACKLOG)==-1 ) {
 
         *error=errno;
 	close(conn->fd);
@@ -335,18 +419,15 @@ struct fs_connection_s *get_containing_connection(struct list_element_s *list)
 {
     return (struct fs_connection_s *) ( ((char *) list) - offsetof(struct fs_connection_s, list));
 }
-
 struct fs_connection_s *get_next_connection(struct fs_connection_s *s_conn, struct fs_connection_s *c_conn)
 {
     struct list_element_s *list=(c_conn) ? c_conn->list.next : s_conn->ops.server.head;
     return (list) ? get_containing_connection(list) : NULL;
 }
-
 int lock_connection_list(struct fs_connection_s *s_conn)
 {
     return pthread_mutex_lock(&s_conn->ops.server.mutex);
 }
-
 int unlock_connection_list(struct fs_connection_s *s_conn)
 {
     return pthread_mutex_unlock(&s_conn->ops.server.mutex);

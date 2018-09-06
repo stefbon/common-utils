@@ -74,46 +74,6 @@ static unsigned char _fs_get_count()
     return 0;
 }
 
-static union datalink_u *_get_datalink_nondir(struct inode_s *inode)
-{
-    return &inode->link;
-}
-
-static void _set_datalink_nondir(struct inode_s *inode, union datalink_u *link)
-{
-    memcpy(&inode->link, link, sizeof(union datalink_u));
-}
-
-static union datalink_u *_get_datalink_dir(struct inode_s *inode)
-{
-    struct directory_s *directory=(struct directory_s *) inode->link.data;
-    return &directory->link;
-}
-
-static void _set_datalink_dir(struct inode_s *inode, union datalink_u *link)
-{
-    struct directory_s *directory=NULL;
-
-    pthread_mutex_lock(&datalink_mutex);
-
-    directory=get_directory(inode);
-
-    if (directory->flags & _DIRECTORY_FLAG_DUMMY) {
-	unsigned int error=0;
-
-	directory=(* directory->dops->create_directory)(inode, &error);
-	if (directory) memcpy(&directory->link, link, sizeof(union datalink_u));
-
-    } else {
-
-	memcpy(&directory->link, link, sizeof(union datalink_u));
-
-    }
-
-    pthread_mutex_unlock(&datalink_mutex);
-
-}
-
 static int _lock_datalink(struct inode_s *inode)
 {
     return pthread_mutex_lock(&datalink_mutex);
@@ -256,7 +216,7 @@ static void _fs_readdir(struct fuse_opendir_s *opendir, struct fuse_request_s *r
 
 static void _fs_readdirplus(struct fuse_opendir_s *opendir, struct fuse_request_s *request, size_t size, off_t offset)
 {
-    reply_VFS_error(request, ENOSYS); /* no support for now 20170418 */
+    _fs_common_virtual_readdirplus(opendir, request, size, offset);
 }
 
 static void _fs_fsyncdir(struct fuse_opendir_s *opendir, struct fuse_request_s *request, unsigned char datasync)
@@ -276,33 +236,27 @@ static void _fs_fsnotify(struct service_context_s *context, struct fuse_request_
 
 static void _fs_setxattr(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, const char *name, const char *value, size_t size, int flags)
 {
-    reply_VFS_error(request, EACCES);
+
+    if (inode==&context->workspace->rootinode) logoutput("_fs_setxattr: root inode");
+    reply_VFS_error(request, ENODATA);
 }
 
 static void _fs_getxattr(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, const char *name, size_t size)
 {
-    reply_VFS_error(request, ENOATTR);
+    if (inode==&context->workspace->rootinode) logoutput("_fs_getxattr: root inode");
+    reply_VFS_error(request, ENODATA);
 }
 
 static void _fs_listxattr(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, size_t size)
 {
-    unsigned int len=0;
-
-    if (size==0) {
-
-	reply_VFS_xattr(request, 0);
-
-    } else {
-
-	reply_VFS_error(request, ENOATTR);
-
-    }
-
+    if (inode==&context->workspace->rootinode) logoutput("_fs_listxattr: root inode");
+    reply_VFS_error(request, ENODATA);
 }
 
 static void _fs_removexattr(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, const char *name)
 {
-    reply_VFS_error(request, ENOSYS);
+    if (inode==&context->workspace->rootinode) logoutput("_fs_removexattr: root inode");
+    reply_VFS_error(request, ENODATA);
 }
 
 static void _fs_statfs(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode)
@@ -322,9 +276,6 @@ static void _set_virtual_fs(struct fuse_fs_s *fs)
     fs->setattr=_fs_setattr;
 
     if ((fs->flags & FS_SERVICE_FLAG_DIR) || (fs->flags & FS_SERVICE_FLAG_ROOT)) {
-
-	fs->get_datalink=_get_datalink_dir;
-	fs->set_datalink=_set_datalink_dir;
 
 	fs->type.dir.use_fs=use_virtual_fs;
 
@@ -349,9 +300,6 @@ static void _set_virtual_fs(struct fuse_fs_s *fs)
 	fs->type.dir.fsnotify=_fs_fsnotify;
 
     } else {
-
-	fs->get_datalink=_get_datalink_nondir;
-	fs->set_datalink=_set_datalink_nondir;
 
 	fs->type.nondir.readlink=_fs_readlink;
 

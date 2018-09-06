@@ -49,11 +49,11 @@
 #include "main.h"
 
 #include "pathinfo.h"
+#include "utils.h"
 #include "entry-management.h"
 #include "directory-management.h"
 #include "entry-utils.h"
 
-#include "utils.h"
 #include "fuse-interface.h"
 
 #include "fuse-fs.h"
@@ -70,12 +70,13 @@ static struct statfs statfs_keep;
 
 static void _fs_special_forget(struct inode_s *inode)
 {
-    union datalink_u *link=get_datalink(inode);
 
-    if (link && link->data) {
+    if (inode->inode_link) {
+	struct inode_link_s *link=inode->inode_link;
 
-	free(link->data);
-	link->data=NULL;
+	if (link->link.data) free(link->link.data);
+	free(link);
+	inode->inode_link=NULL;
 
     }
 
@@ -112,12 +113,11 @@ static void _fs_special_open(struct fuse_openfile_s *openfile, struct fuse_reque
 {
     unsigned int error=EIO;
     struct inode_s *inode=openfile->inode;
-    union datalink_u *link=get_datalink(inode);
 
-    if (link && link->data) {
+    if (inode->inode_link) {
 	int fd=0;
 
-	fd=open(link->data, flags);
+	fd=open(inode->inode_link->link.data, flags);
 
 	if (fd>0) {
 	    struct fuse_open_out open_out;
@@ -254,9 +254,6 @@ void set_fs_special(struct inode_s *inode)
 void create_desktopentry_file(char *path, struct entry_s *parent, struct workspace_mount_s *workspace)
 {
     struct stat st;
-    struct directory_s *directory=get_directory(parent->inode);
-
-    if (! directory) return;
 
     logoutput("create_desktopentry_file: path %s", path);
 
@@ -268,15 +265,23 @@ void create_desktopentry_file(char *path, struct entry_s *parent, struct workspa
 	xname.len=strlen(xname.name);
 	calculate_nameindex(&xname);
 
-	struct entry_s *entry=_fs_common_create_entry(workspace, directory, &xname, &st, 0, &error);
+	struct entry_s *entry=_fs_common_create_entry(workspace, parent, &xname, &st, 0, &error);
 
 	if (entry) {
-	    union datalink_u link;
+	    char *duppath=strdup(path);
 
 	    entry->inode->fs=&fs;
 
-	    link.data=strdup(path);
-	    set_datalink(entry->inode, &link);
+	    if (duppath && create_inode_link_data(entry->inode, (void *) duppath, INODE_LINK_TYPE_SPECIAL_ENTRY)) {
+
+		logoutput("create_desktopentry_file: created entry");
+
+	    } else {
+
+		logoutput("create_desktopentry_file: failed to created entry link");
+		if (duppath) free(duppath);
+
+	    }
 
 	}
 

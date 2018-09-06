@@ -59,16 +59,6 @@ void copy_fuse_fs(struct fuse_fs_s *to, struct fuse_fs_s *from)
     memcpy(to, from, sizeof(struct fuse_fs_s));
 }
 
-union datalink_u *get_datalink(struct inode_s *inode)
-{
-    return (* inode->fs->get_datalink)(inode);
-}
-
-void set_datalink(struct inode_s *inode, union datalink_u *link)
-{
-    (* inode->fs->set_datalink)(inode, link);
-}
-
 void fs_inode_forget(struct inode_s *inode)
 {
     (* inode->fs->forget)(inode);
@@ -84,56 +74,19 @@ int fs_unlock_datalink(struct inode_s *inode)
     return (* inode->fs->unlock_datalink)(inode);
 }
 
-static void _fuse_fs_forget_one(struct context_interface_s *interface, struct inode_s *inode, uint64_t nlookup)
+unsigned char get_fs_count(struct inode_s *inode)
 {
-
-    if ( inode->nlookup < nlookup ) {
-
-	logoutput_error("FORGET: internal error: forget ino=%llu %llu from %llu", (unsigned long long) inode->ino, (unsigned long long) nlookup, (unsigned long long) inode->nlookup);
-	inode->nlookup=0;
-
-    } else {
-
-    	inode->nlookup -= nlookup;
-
-    }
-
-    if (inode->nlookup==0) {
-
-	/* the fs for this inode free/close specific data */
-
-	(* inode->fs->forget)(inode);
-
-	if (! inode->alias) {
-	    struct service_context_s *context=get_service_context(interface);
-	    struct workspace_mount_s *workspace=context->workspace;
-
-	    /* only remove inode when there is no entry attached */
-
-	    remove_inode(inode);
-	    free(inode);
-	    decrease_inodes_workspace(workspace);
-
-	}
-
-    }
-
+    return (* inode->fs->get_count)();
 }
 
 void fuse_fs_forget(struct fuse_request_s *request)
 {
     struct inode_s *inode=NULL;
+    struct fuse_forget_in *forget_in=(struct fuse_forget_in *)request->buffer;
 
     logoutput_notice("FORGET: ino %lli (thread %i)", (long long) request->ino, (int) gettid());
 
-    inode=find_inode(request->ino);
-
-    if (inode) {
-	struct fuse_forget_in *forget_in=(struct fuse_forget_in *) request->buffer;
-
-	_fuse_fs_forget_one(request->interface, inode, forget_in->nlookup);
-
-    }
+    inode=forget_inode(request->interface, request->ino, forget_in->nlookup, NULL, NULL, FORGET_INODE_FLAG_QUEUE | FORGET_INODE_FLAG_REMOVE_ENTRY);
 
 }
 
@@ -148,8 +101,7 @@ void fuse_fs_forget_multi(struct fuse_request_s *request)
 
     for (i=0; i<batch_forget_in->count; i++) {
 
-	inode = find_inode(forgets[i].nodeid);
-	if (inode) _fuse_fs_forget_one(request->interface, inode, forgets[i].nlookup);
+	inode=forget_inode(request->interface, forgets[i].nodeid, forgets[i].nlookup, NULL, NULL, FORGET_INODE_FLAG_QUEUE | FORGET_INODE_FLAG_REMOVE_ENTRY);
 
     }
 
@@ -164,14 +116,14 @@ void fuse_fs_lookup(struct fuse_request_s *request)
 	struct workspace_mount_s *workspace=context->workspace;
 	struct inode_s *inode=&workspace->rootinode;
 
-	(* inode->fs->type.dir.lookup)(context, request, inode, name, request->size);
+	(* inode->fs->type.dir.lookup)(context, request, inode, name, strlen(name));
 
     } else {
 	struct inode_s *inode=find_inode(request->ino);
 
 	if (inode) {
 
-	    (* inode->fs->type.dir.lookup)(context, request, inode, name, request->size);
+	    (* inode->fs->type.dir.lookup)(context, request, inode, name, strlen(name));
 
 	} else {
 
@@ -321,8 +273,8 @@ void fuse_fs_mkdir(struct fuse_request_s *request)
     struct service_context_s *context=get_service_context(request->interface);
     uint64_t ino=request->ino;
     struct fuse_mkdir_in *mkdir_in=(struct fuse_mkdir_in *)request->buffer;
-    unsigned int len=request->size - sizeof(struct fuse_mkdir_in);
     char *name=(char *) (request->buffer + sizeof(struct fuse_mkdir_in));
+    unsigned int len=strlen(name);
 
     if (ino==FUSE_ROOT_ID) {
 	struct workspace_mount_s *workspace=context->workspace;
@@ -352,8 +304,8 @@ void fuse_fs_mknod(struct fuse_request_s *request)
     struct service_context_s *context=get_service_context(request->interface);
     uint64_t ino=request->ino;
     struct fuse_mknod_in *mknod_in=(struct fuse_mknod_in *) request->buffer;
-    unsigned int len=request->size - sizeof(struct fuse_mknod_in);
     char *name=(char *) (request->buffer + sizeof(struct fuse_mknod_in));
+    unsigned int len=strlen(name);
 
     if (ino==FUSE_ROOT_ID) {
 	struct workspace_mount_s *workspace=context->workspace;
@@ -383,9 +335,9 @@ void fuse_fs_symlink(struct fuse_request_s *request)
     struct service_context_s *context=get_service_context(request->interface);
     uint64_t ino=request->ino;
     char *name=(char *) request->buffer;
-    unsigned int len0=strlen(name) + 1;
+    unsigned int len0=strlen(name);
     char *target=(char *) (request->buffer + len0);
-    unsigned int len1=request->size - len0;
+    unsigned int len1=strlen(target);
 
     if (ino==FUSE_ROOT_ID) {
 	struct workspace_mount_s *workspace=context->workspace;
@@ -419,7 +371,7 @@ void fuse_fs_unlink(struct fuse_request_s *request)
 
     if (inode) {
 
-	(* inode->fs->type.dir.unlink)(context, request, inode, name, request->size);
+	(* inode->fs->type.dir.unlink)(context, request, inode, name, strlen(name));
 
     } else {
 
@@ -438,7 +390,7 @@ void fuse_fs_rmdir(struct fuse_request_s *request)
 
     if (inode) {
 
-	(* inode->fs->type.dir.rmdir)(context, request, inode, name, request->size);
+	(* inode->fs->type.dir.rmdir)(context, request, inode, name, strlen(name));
 
     } else {
 
@@ -1869,6 +1821,7 @@ void register_fuse_functions(struct context_interface_s *interface)
 
     register_fuse_function(ptr, FUSE_OPENDIR, fuse_fs_opendir);
     register_fuse_function(ptr, FUSE_READDIR, fuse_fs_readdir);
+    register_fuse_function(ptr, FUSE_READDIRPLUS, fuse_fs_readdirplus);
     register_fuse_function(ptr, FUSE_RELEASEDIR, fuse_fs_releasedir);
     register_fuse_function(ptr, FUSE_FSYNCDIR, fuse_fs_fsyncdir);
 

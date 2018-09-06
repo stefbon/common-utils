@@ -55,6 +55,11 @@
 #define SIZE_DIRECTORY_HASHTABLE			1024
 #endif
 
+static struct directory_s *directory_hashtable[2048];
+static pthread_mutex_t directory_hashtable_mutex=PTHREAD_MUTEX_INITIALIZER;
+
+extern struct directory_s *get_dummy_directory();
+
 /*
     callbacks for the skiplist
     compare two elements to determine the right order
@@ -253,12 +258,15 @@ struct simple_lock_s *_create_rlock_directory(struct directory_s *directory)
 {
     struct simple_lock_s *lock=malloc(sizeof(struct simple_lock_s));
 
+    // logoutput_info("_create_rlock_directory: directory %s", (directory) ? "defined" : "notdefined");
+
     if (lock) {
 
 	init_directory_readlock(directory, lock);
 	lock->flags|=SIMPLE_LOCK_FLAG_ALLOCATED;
 	if (simple_lock(lock)==0) return lock;
 	free(lock);
+	logoutput_info("_create_rlock_directory: no lock");
 
     }
 
@@ -325,12 +333,16 @@ static void *create_rlock_skiplist(struct skiplist_struct *sl)
 {
     struct directory_s *directory=(struct directory_s *) ( ((char *) sl) - offsetof(struct directory_s, skiplist));
 
+    //logoutput("create_rlock_skiplist");
+
     return (void *) _create_rlock_directory(directory);
 }
 
 static void *create_wlock_skiplist(struct skiplist_struct *sl)
 {
     struct directory_s *directory=(struct directory_s *) ( ((char *) sl) - offsetof(struct directory_s, skiplist));
+
+    //logoutput_info("create_wlock_skiplist");
 
     return (void *) _create_wlock_directory(directory);
 }
@@ -398,6 +410,8 @@ int init_directory(struct directory_s *directory, unsigned int *error)
     directory->synctime.tv_sec=0;
     directory->synctime.tv_nsec=0;
     directory->inode=NULL;
+    directory->next=NULL;
+    directory->prev=NULL;
     directory->count=0;
 
     result=init_simple_locking(&directory->locking);
@@ -431,6 +445,75 @@ int init_directory(struct directory_s *directory, unsigned int *error)
 
 }
 
+struct directory_s *get_directory(struct inode_s *inode)
+{
+    unsigned int hashvalue = inode->ino % 2048;
+    struct directory_s *directory=get_dummy_directory(); /* default value */
+    struct directory_s *search=NULL;
+
+    pthread_mutex_lock(&directory_hashtable_mutex);
+
+    search=directory_hashtable[hashvalue];
+
+    while (search) {
+
+	if (search->inode==inode) {
+
+	    directory=search;
+	    break;
+
+	}
+
+	search=search->next;
+
+    }
+
+    pthread_mutex_unlock(&directory_hashtable_mutex);
+
+    return directory;
+}
+
+void _add_directory_hashtable(struct directory_s *directory)
+{
+    unsigned int hashvalue = directory->inode->ino % 2048;
+
+    pthread_mutex_lock(&directory_hashtable_mutex);
+
+    directory->prev=NULL;
+    directory->next=directory_hashtable[hashvalue];
+    directory_hashtable[hashvalue]=directory;
+
+    pthread_mutex_unlock(&directory_hashtable_mutex);
+}
+
+void _remove_directory_hashtable(struct directory_s *directory)
+{
+    unsigned int hashvalue = directory->inode->ino % 2048;
+
+    pthread_mutex_lock(&directory_hashtable_mutex);
+
+    if (directory==directory_hashtable[hashvalue]) {
+	struct directory_s *next=directory->next;
+
+	directory_hashtable[hashvalue]=next;
+	if (next) next->prev=NULL;
+
+    } else {
+	struct directory_s *next=directory->next;
+	struct directory_s *prev=directory->prev;
+
+	if (next) next->prev=directory->prev;
+	if (prev) prev->next=directory->next;
+
+    }
+
+    pthread_mutex_unlock(&directory_hashtable_mutex);
+
+    directory->prev=NULL;
+    directory->next=NULL;
+
+}
+
 struct directory_s *_create_directory(struct inode_s *inode, void (* init_cb)(struct directory_s *directory), unsigned int *error)
 {
     struct directory_s *directory=NULL;
@@ -451,11 +534,8 @@ struct directory_s *_create_directory(struct inode_s *inode, void (* init_cb)(st
 	} else {
 
 	    directory->inode=inode;
-
 	    (* init_cb)(directory);
-
-	    memcpy(&directory->link, &inode->link, sizeof(union datalink_u));
-	    inode->link.data=(void *) directory;
+	    _add_directory_hashtable(directory);
 
 	}
 
@@ -465,25 +545,19 @@ struct directory_s *_create_directory(struct inode_s *inode, void (* init_cb)(st
 
 }
 
-struct directory_s *get_directory(struct inode_s *inode)
-{
-    return (struct directory_s *) inode->link.data;
-}
-
 void free_pathcalls(struct pathcalls_s *p)
 {
     pthread_mutex_destroy(&p->mutex);
     (* p->free)(p);
-
 }
 
 void free_directory(struct directory_s *directory)
 {
+    _remove_directory_hashtable(directory);
     clear_skiplist(&directory->skiplist);
     destroy_lock_skiplist(&directory->skiplist);
     clear_simple_locking(&directory->locking);
     free_pathcalls(&directory->pathcalls);
-
 }
 
 void destroy_directory(struct directory_s *directory)
@@ -507,4 +581,31 @@ int unlock_pathcalls(struct pathcalls_s *p)
 unsigned int get_path_pathcalls(struct directory_s *directory, void *ptr)
 {
     return (* directory->pathcalls.get_path)(directory, ptr);
+}
+
+
+int init_directory_hashtable()
+{
+    // directory_hashtable=(struct directory_s **) calloc(2048, sizeof(struct directory_s *));
+
+    //if (directory_hashtable) {
+
+    memset(directory_hashtable, 0, sizeof(directory_hashtable));
+    for (unsigned int i=0; i<2048; i++) directory_hashtable[i]=NULL;
+
+    pthread_mutex_init(&directory_hashtable_mutex, NULL);
+
+    return 0;
+
+    error:
+
+    return -1;
+
+}
+
+void free_directory_hashtable()
+{
+    // free(directory_hashtable);
+    // directory_hashtable=NULL;
+    pthread_mutex_destroy(&directory_hashtable_mutex);
 }

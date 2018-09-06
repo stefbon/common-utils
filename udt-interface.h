@@ -1,5 +1,5 @@
 /*
-  2017 Stef Bon <stefbon@gmail.com>
+  2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017 Stef Bon <stefbon@gmail.com>
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License
@@ -17,20 +17,11 @@
 
 */
 
-#ifndef _COMMON_NETWORK_UTILS_H
-#define _COMMON_NETWORK_UTILS_H
+#ifndef COMMON_UDT_INTERFACE_H
+#define COMMON_UDT_INTERFACE_H
 
-#include <sys/socket.h>
+#include "localsocket.h"
 
-/* prototypes */
-
-unsigned char check_family_ip_address(char *address, const char *what);
-char *get_connection_ipv4(unsigned int fd, unsigned char what, unsigned int *error);
-char *get_connection_hostname(unsigned int fd, unsigned char what, unsigned int *error);
-
-unsigned int get_msg_controllen(struct msghdr *message, const char *what);
-void init_fd_msg(struct msghdr *message, char *buffer, unsigned int size, int fd);
-
-int read_fd_msg(struct msghdr *message);
+void setsocketopsudt(struct fs_connection_s *conn);
 
 #endif

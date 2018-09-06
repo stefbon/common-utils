@@ -274,40 +274,43 @@ void _fs_common_virtual_lookup(struct service_context_s *context, struct fuse_re
     struct name_s xname={NULL, 0, 0};
     unsigned int error=0;
 
-    logoutput("_fs_common_virtual_lookup: name %s, parent %li:%s (thread %i)", name, (long) inode->ino, parent->name.name, (int) gettid());
+    logoutput("_fs_common_virtual_lookup: name %.*s, parent %li:%.*s (thread %i)", len, name, (long) inode->ino, parent->name.len, parent->name.name, (int) gettid());
 
     xname.name=name;
-    xname.len=len-1;
+    xname.len=strlen(name);
     calculate_nameindex(&xname);
 
     entry=find_entry(parent, &xname, &error);
 
-    if (entry && (entry->inode->nlookup>0)) {
+    if (entry) {
+	struct inode_s *inode=entry->inode;
 
 	/* it's possible that the entry represents the root of a service
 	    in that case do a lookup of the '.' on the root of the service using the service specific fs calls
 	*/
 
-	if ((* entry->inode->fs->get_count)()==1) {
-	    union datalink_u *link=get_datalink(entry->inode);
-	    struct service_context_s *service_context=(struct service_context_s *) link->data;
+	log_inode_information(inode, INODE_INFORMATION_NAME | INODE_INFORMATION_NLOOKUP | INODE_INFORMATION_MODE | INODE_INFORMATION_SIZE | INODE_INFORMATION_MTIM | INODE_INFORMATION_INODE_LINK | INODE_INFORMATION_FS_COUNT);
 
-	    if (service_context) {
-		struct pathinfo_s pathinfo=PATHINFO_INIT;
-		unsigned int pathlen=2;
-		char path[3];
+	logoutput("_fs_common_virtual_lookup: name %.*s nlookup %i", entry->name.len, entry->name.name, inode->nlookup);
+	inode->nlookup++;
 
-		path[2]='\0';
-		path[1]='.';
-		path[0]='/';
+	if (inode->inode_link->type==INODE_LINK_TYPE_CONTEXT && (((struct service_context_s *) inode->inode_link->link.data) != context)) {
+	    struct service_context_s *service_context=(struct service_context_s *) inode->inode_link->link.data;
+	    struct pathinfo_s pathinfo=PATHINFO_INIT;
+	    unsigned int pathlen=2;
+	    char path[3];
 
-		pathinfo.len=2;
-		pathinfo.path=path;
+	    logoutput("_fs_common_virtual_lookup: use context %s", service_context->name);
 
-		(* service_context->fs->lookup_existing)(service_context, request, entry, &pathinfo);
-		return;
+	    path[2]='\0';
+	    path[1]='.';
+	    path[0]='/';
 
-	    }
+	    pathinfo.len=2;
+	    pathinfo.path=path;
+
+	    (* service_context->fs->lookup_existing)(service_context, request, entry, &pathinfo);
+	    return;
 
 	}
 
@@ -315,6 +318,7 @@ void _fs_common_virtual_lookup(struct service_context_s *context, struct fuse_re
 
     } else {
 
+	logoutput("_fs_common_virtual_lookup: enoent lookup %i", (entry) ? entry->inode->nlookup : 0);
 	reply_VFS_error(request, ENOENT);
 
     }
@@ -483,7 +487,8 @@ void _fs_common_virtual_readdir(struct fuse_opendir_s *opendir, struct fuse_requ
 
 	    }
 
-	    dirent_size=add_direntry_buffer(buff + pos, size - pos, offset + 1, &xname, &st, &error);
+	    get_inode_stat(inode, &st);
+	    dirent_size=add_direntry_buffer(request->interface->ptr, buff + pos, size - pos, offset + 1, &xname, &st, &error);
 
 	    if (error==ENOBUFS) {
 
@@ -604,10 +609,14 @@ void _fs_common_virtual_readdirplus(struct fuse_opendir_s *opendir, struct fuse_
 		st.st_mode=inode->mode;
 		xname.name=entry->name.name;
 		xname.len=entry->name.len;
+		inode->nlookup++;
+
+		entry=entry->name_next;
 
 	    }
 
-	    dirent_size=add_direntry_buffer(buff + pos, size - pos, offset + 1, &xname, &st, &error);
+	    get_inode_stat(inode, &st);
+	    dirent_size=add_direntry_plus_buffer(request->interface->ptr, buff + pos, size - pos, offset + 1, &xname, &st, &error);
 
 	    if (error==ENOBUFS) {
 
@@ -658,23 +667,24 @@ struct _fs_common_create_struct {
 static void _fs_common_create_cb_created(struct entry_s *entry, void *data)
 {
     struct _fs_common_create_struct *_create_common=(struct _fs_common_create_struct *) data;
+    struct stat *st=_create_common->st;
     struct inode_s *inode=entry->inode;
 
     logoutput("_fs_common_create_cb_created: %s", entry->name.name);
 
     fill_inode_stat(inode, _create_common->st);
 
-    memcpy(&inode->ctim, &_create_common->st->st_ctim, sizeof(struct timespec));
-    memcpy(&inode->mtim, &_create_common->st->st_mtim, sizeof(struct timespec));
-    memcpy(&inode->atim, &_create_common->st->st_atim, sizeof(struct timespec));
-    inode->mode=_create_common->st->st_mode;
+    memcpy(&inode->ctim, &st->st_ctim, sizeof(struct timespec));
+    memcpy(&inode->mtim, &st->st_mtim, sizeof(struct timespec));
+    memcpy(&inode->atim, &st->st_atim, sizeof(struct timespec));
+    inode->mode=st->st_mode;
     inode->nlookup=1;
     inode->nlink=1;
-    inode->size=_create_common->st->st_size;
+    inode->size=st->st_size;
 
     add_inode_context(_create_common->workspace->context, inode);
 
-    if (S_ISDIR(_create_common->st->st_mode)) {
+    if (S_ISDIR(st->st_mode)) {
 
 	inode->nlink=2;
 
@@ -710,10 +720,12 @@ static void _fs_common_create_cb_found(struct entry_s *entry, void *data)
 {
     struct _fs_common_create_struct *_create_common=(struct _fs_common_create_struct *) data;
 
+    logoutput("_fs_common_create_cb_found: %s", entry->name.name);
+
     if (_create_common->mayexist==1) {
 	struct inode_s *inode=entry->inode;
 
-	fill_inode_stat(inode, _create_common->st);
+	fill_inode_stat(entry->inode, _create_common->st);
 	*_create_common->error=0;
 
     } else {
@@ -734,20 +746,7 @@ static void _fs_common_create_cb_error(struct entry_s *parent, struct name_s *xn
 
 }
 
-struct entry_s *_fs_common_create_entry(struct workspace_mount_s *workspace, struct directory_s *directory, struct name_s *xname, struct stat *st, unsigned char mayexist, unsigned int *error)
-{
-    struct _fs_common_create_struct _create_common;
-
-    _create_common.workspace=workspace;
-    _create_common.st=st;
-    _create_common.mayexist=mayexist;
-    _create_common.error=error;
-
-    return create_entry_extended_batch(directory, xname, _fs_common_create_cb_created, _fs_common_create_cb_found, _fs_common_create_cb_error, (void *) &_create_common);
-
-}
-
-struct entry_s *_fs_common_create_entry_unlocked(struct workspace_mount_s *workspace, struct entry_s *parent, struct name_s *xname, struct stat *st, unsigned char mayexist, unsigned int *error)
+struct entry_s *_fs_common_create_entry(struct workspace_mount_s *workspace, struct entry_s *parent, struct name_s *xname, struct stat *st, unsigned char mayexist, unsigned int *error)
 {
     struct _fs_common_create_struct _create_common;
 
@@ -757,6 +756,21 @@ struct entry_s *_fs_common_create_entry_unlocked(struct workspace_mount_s *works
     _create_common.error=error;
 
     return create_entry_extended(parent, xname, _fs_common_create_cb_created, _fs_common_create_cb_found, _fs_common_create_cb_error, (void *) &_create_common);
+
+}
+
+struct entry_s *_fs_common_create_entry_unlocked(struct workspace_mount_s *workspace, struct directory_s *directory, struct name_s *xname, struct stat *st, unsigned char mayexist, unsigned int *error)
+{
+    struct _fs_common_create_struct _create_common;
+
+    logoutput("_fs_common_create_entry_unlocked: error %i:%s creating %s", error, strerror(error), xname->name);
+
+    _create_common.workspace=workspace;
+    _create_common.st=st;
+    _create_common.mayexist=mayexist;
+    _create_common.error=error;
+
+    return create_entry_extended_batch(directory, xname, _fs_common_create_cb_created, _fs_common_create_cb_found, _fs_common_create_cb_error, (void *) &_create_common);
 
 }
 

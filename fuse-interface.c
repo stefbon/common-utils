@@ -119,7 +119,7 @@ void notify_VFS_delete(void *ptr, uint64_t pino, uint64_t ino, char *name, unsig
     out.parent=pino;
     out.child=ino;
     out.namelen=len;
-    padding=0;
+    out.padding=0;
 
     iov[0].iov_base=(void *) &oh;
     iov[0].iov_len=size_out_header;
@@ -156,21 +156,7 @@ void notify_kernel_change(void *ptr, uint64_t ino, uint32_t mask)
 
 }
 
-/*
-
-    copy found values in readdir in buffer
-
-    - ino
-    - offset
-    - namelen
-    - type
-    - name
-
-    make sure it's uint64_t alligned
-
-*/
-
-size_t add_direntry_buffer(char *buffer, size_t size, off_t offset, struct name_s *xname, struct stat *st, unsigned int *error)
+size_t add_direntry_buffer(void *ptr, char *buffer, size_t size, off_t offset, struct name_s *xname, struct stat *st, unsigned int *error)
 {
     size_t dirent_size=offsetof(struct fuse_dirent, name) + xname->len;
     size_t dirent_size_alligned=(((dirent_size) + sizeof(uint64_t) - 1) & ~(sizeof(uint64_t) - 1));
@@ -187,6 +173,64 @@ size_t add_direntry_buffer(char *buffer, size_t size, off_t offset, struct name_
 	dirent->namelen=xname->len;
 	dirent->type=(st->st_mode>0) ? (st->st_mode & S_IFMT) >> 12 : DT_UNKNOWN;
 	memcpy(dirent->name, xname->name, xname->len);
+
+    } else {
+
+	*error=ENOBUFS;
+
+    }
+
+    return dirent_size_alligned;
+
+}
+
+size_t add_direntry_plus_buffer(void *ptr, char *buffer, size_t size, off_t offset, struct name_s *xname, struct stat *st, unsigned int *error)
+{
+    size_t dirent_size=offsetof(struct fuse_direntplus, dirent.name) + xname->len;
+    size_t dirent_size_alligned=(((dirent_size) + sizeof(uint64_t) - 1) & ~(sizeof(uint64_t) - 1));
+
+    *error=0;
+
+    if ( dirent_size_alligned < size) {
+	struct fuse_direntplus *direntplus=(struct fuse_direntplus *) buffer;
+	struct timespec *attr_timeout=get_fuse_interface_attr_timeout(ptr);
+	struct timespec *entry_timeout=get_fuse_interface_entry_timeout(ptr);
+
+	memset(buffer, 0, dirent_size_alligned); /* to be sure, the buffer should be zerod already */
+
+	direntplus->dirent.ino=st->st_ino;
+	direntplus->dirent.off=offset;
+	direntplus->dirent.namelen=xname->len;
+	direntplus->dirent.type=(st->st_mode>0) ? (st->st_mode & S_IFMT) >> 12 : DT_UNKNOWN;
+	memcpy(direntplus->dirent.name, xname->name, xname->len);
+
+	direntplus->entry_out.nodeid=st->st_ino;
+	direntplus->entry_out.generation=0; /* ???? */
+
+	direntplus->entry_out.entry_valid=entry_timeout->tv_sec;
+	direntplus->entry_out.entry_valid_nsec=entry_timeout->tv_nsec;
+	direntplus->entry_out.attr_valid=attr_timeout->tv_sec;
+	direntplus->entry_out.attr_valid_nsec=attr_timeout->tv_nsec;
+
+	direntplus->entry_out.attr.ino=st->st_ino;
+	direntplus->entry_out.attr.size=st->st_size;
+	direntplus->entry_out.attr.blksize=_DEFAULT_BLOCKSIZE;
+	direntplus->entry_out.attr.blocks=st->st_size / _DEFAULT_BLOCKSIZE + (st->st_size % _DEFAULT_BLOCKSIZE == 0) ? 0 : 1;
+
+	direntplus->entry_out.attr.atime=(uint64_t) st->st_atim.tv_sec;
+	direntplus->entry_out.attr.atimensec=(uint64_t) st->st_atim.tv_nsec;
+	direntplus->entry_out.attr.mtime=(uint64_t) st->st_mtim.tv_sec;
+	direntplus->entry_out.attr.mtimensec=(uint64_t) st->st_mtim.tv_nsec;
+	direntplus->entry_out.attr.ctime=(uint64_t) st->st_ctim.tv_sec;
+	direntplus->entry_out.attr.ctimensec=(uint64_t) st->st_ctim.tv_nsec;
+
+	direntplus->entry_out.attr.mode=st->st_mode;
+	direntplus->entry_out.attr.nlink=st->st_nlink;
+	direntplus->entry_out.attr.uid=st->st_uid;
+	direntplus->entry_out.attr.gid=st->st_gid;
+	direntplus->entry_out.attr.rdev=0;
+
+	direntplus->entry_out.attr.padding=0;
 
     } else {
 
@@ -608,6 +652,16 @@ static void process_fusequeue(void *data)
 
 }
 
+static unsigned char *fuse_request_interrupted_default(struct fuse_request_s *request)
+{
+    return (request->flags & FUSEDATA_FLAG_INTERRUPTED);
+}
+
+static unsigned char *fuse_request_interrupted_nonfuse(struct fuse_request_s *request)
+{
+    return 0;
+}
+
 static int read_fuse_event(int fd, void *ptr, uint32_t events)
 {
     struct fuseparam_s *fuseparam=(struct fuseparam_s *) ptr;
@@ -677,6 +731,7 @@ static int read_fuse_event(int fd, void *ptr, uint32_t events)
 	    request->interface=fuseparam->interface;
 	    request->opcode=in->opcode;
 	    request->flags=0;
+	    request->is_interrupted=fuse_request_interrupted_default;
 	    request->unique=in->unique;
 	    request->ino=in->nodeid;
 	    request->uid=in->uid;
@@ -1025,8 +1080,6 @@ static void *mount_fuse_interface(uid_t uid, struct context_interface_s *interfa
 	goto error;
 
     }
-
-    
 
     out:
 

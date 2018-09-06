@@ -25,39 +25,28 @@
 #include <syslog.h>
 #include <sys/syscall.h>
 
-#ifdef LOGGING
+struct logoutput_s {
+    void 			(* debug)(const char *fmt, ...);
+    void 			(* info)(const char *fmt, ...);
+    void 			(* notice)(const char *fmt, ...);
+    void 			(* warning)(const char *fmt, ...);
+    void 			(* error)(const char *fmt, ...);
+};
 
-#define logoutput_debug(...) syslog(LOG_DEBUG, __VA_ARGS__)
-#define logoutput_info(...) syslog(LOG_INFO, __VA_ARGS__)
-#define logoutput_notice(...) syslog(LOG_NOTICE, __VA_ARGS__)
-#define logoutput_warning(...) syslog(LOG_WARNING, __VA_ARGS__)
-#define logoutput_error(...) syslog(LOG_ERR, __VA_ARGS__)
+// #ifdef LOGGING
 
-#define logoutput(...) syslog(LOG_INFO, __VA_ARGS__)
+extern struct logoutput_s logging;
 
-static pid_t gettid()
-{
-    return (pid_t) syscall(SYS_gettid);
-}
+/* without extension defaults to debug */
+#define logoutput(...) logging.info(__VA_ARGS__)
 
-#else
+#define logoutput_debug(...) logging.debug(__VA_ARGS__)
+#define logoutput_info(...) logging.info(__VA_ARGS__)
+#define logoutput_notice(...) logging.notice(__VA_ARGS__)
+#define logoutput_warning(...) logging.warning(__VA_ARGS__)
+#define logoutput_error(...) logging.error(__VA_ARGS__)
 
-static inline void dummy_nolog()
-{
-    /* logs nothing */
-}
 
-#define logoutput_debug(...) dummy_nolog()
-#define logoutput_info(...) dummy_nolog()
-#define logoutput_notice(...) dummy_nolog()
-#define logoutput_warning(...) dummy_nolog()
-#define logoutput_error(...) dummy_nolog()
-
-#define logoutput(...) dummy_nolog()
-
-static pid_t gettid()
-{
-    return 0;
-}
-
-#endif
+unsigned int gettid();
+void switch_logging_backend(const char *what);
+void switch_default_loglevel(const char *what);

@@ -41,6 +41,7 @@
 
 #include "skiplist.h"
 #include "skiplist-delete.h"
+#define LOGGING
 #include "logging.h"
 
 static void unlock_dirnode_vector_deletefailed(struct vector_dirnode_struct *vector, struct dirnode_struct *dirnode_rm)
@@ -88,6 +89,8 @@ static void correct_dirnodes_sl(struct dirnode_struct *dirnode, unsigned short l
 static void remove_dirnodes_sl(struct skiplist_struct *sl, struct vector_dirnode_struct *vector, void *data)
 {
     struct dirnode_struct *dirnode=NULL;
+
+    logoutput_warning("remove_dirnodes_sl");
 
     dirnode=sl->dirnode;
 
@@ -191,9 +194,26 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
     int diff=0;
     unsigned int search_row=0;
     void *ptr=NULL;
+    int level=0;
+
+    logoutput_warning("delete_nonempty_sl: sl %s", (sl) ? "defined" : "not defined");
+    if (sl) {
+
+	logoutput_warning("delete_nonempty_sl: create_rlock %s", (sl->ops.create_rlock) ? "defined" : "not defined");
+
+    } else {
+
+	logoutput_warning("delete_nonempty_sl: create_rlock sl not defined");
+
+    }
 
     ptr=sl->ops.create_rlock(sl);
+
+    logoutput("delete_nonempty_sl: A");
+
     if (sl->ops.count(sl)==0) goto unlock;
+
+    logoutput("delete_nonempty_sl: init");
 
     init_vector(&vector);
 
@@ -208,11 +228,13 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
     if (sl->dirnode) {
 	struct dirnode_struct *dirnode=sl->dirnode;
 	struct dirnode_struct *next_dirnode=NULL;
-	int level=dirnode->level;
 	void *next=NULL;
+
+	logoutput("delete_nonempty_sl: dn not NULL");
 
 	/* head of the skiplist */
 
+	level=dirnode->level;
 	if (add_vector_lanes(&vector, level, error)==-1) goto unlock;
 
 	vector.maxlevel=level;
@@ -221,6 +243,8 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
 	while (level>=0) {
 
 	    pthread_mutex_lock(&sl->mutex);
+
+	    logoutput("delete_nonempty_sl: level %i", level);
 
 	    dirnode=vector.lane[level].dirnode;
 	    next_dirnode=dirnode->junction[level].next;
@@ -238,50 +262,17 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
 
 		/* next dirnode points to entry */
 
-		if (next_dirnode->lock & _DIRNODE_RMLOCK) {
+		/* dirnode is already to be removed */
 
-		    /* dirnode is already to be removed */
-
-		    *error=EALREADY;
-		    vector.minlevel=level+1;
-		    unlock_dirnode_vector(&vector);
-		    pthread_cond_broadcast(&sl->cond);
-		    pthread_mutex_unlock(&sl->mutex);
-		    goto unlock;
-
-		}
-
+		if (next_dirnode->lock & _DIRNODE_RMLOCK) goto eagain;
 		search=next;
 		search_row+=dirnode->junction[level].count - 1;
-
-		if (level==vector.maxlevel && (dirnode->type & _DIRNODE_TYPE_START) && next_dirnode->junction[level].next==dirnode) {
-
-		    /* this dirnode will be deleted and it's the only one in this lane */
-		    /* try to lock the directory exclusive */
-
-		    if (sl->ops.prelock(sl, ptr)==-1) {
-
-			*error=EAGAIN;
-			vector.minlevel=level+1;
-			unlock_dirnode_vector(&vector);
-			pthread_cond_broadcast(&sl->cond);
-			pthread_mutex_unlock(&sl->mutex);
-			goto unlock;
-
-		    }
-
-		}
 
 		/* here try to lock the region in this lane */
 
 		if (dirnode->junction[level].lock & _DIRNODE_WRITELOCK) {
 
-		    *error=EAGAIN;
-		    vector.minlevel=level+1;
-		    unlock_dirnode_vector(&vector);
-		    pthread_cond_broadcast(&sl->cond);
-		    pthread_mutex_unlock(&sl->mutex);
-		    goto unlock;
+		    goto eagain;
 
 		} else if (dirnode->junction[level].lock>>3 > 0) {
 
@@ -325,12 +316,7 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
 
 			if (dirnode->junction[level].lock & _DIRNODE_WRITELOCK) {
 
-			    *error=EAGAIN;
-			    vector.minlevel=level+1;
-			    unlock_dirnode_vector_deletefailed(&vector, next_dirnode);
-			    pthread_cond_broadcast(&sl->cond);
-			    pthread_mutex_unlock(&sl->mutex);
-			    goto unlock;
+			    goto eagain;
 
 			} else if (dirnode->junction[level].lock>>3 > 0) {
 
@@ -376,23 +362,13 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
 
 		    /* this dirnode is about to be removed: break */
 
-		    *error=EAGAIN;
-		    vector.minlevel=level+1;
-		    unlock_dirnode_vector(&vector);
-		    pthread_cond_broadcast(&sl->cond);
-		    pthread_mutex_unlock(&sl->mutex);
-		    goto unlock;
+		    goto eagain;
 
 		} else if (dirnode->junction[level].lock & _DIRNODE_WRITELOCK) {
 
 		    /* this region in this fast lane is already locked */
 
-		    *error=EAGAIN;
-		    vector.minlevel=level+1;
-		    unlock_dirnode_vector(&vector);
-		    pthread_cond_broadcast(&sl->cond);
-		    pthread_mutex_unlock(&sl->mutex);
-		    goto unlock;
+		    goto eagain;
 
 		} else {
 
@@ -503,7 +479,7 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
 
     if (found && *error==0) {
 
-	sl->ops.upgradelock(sl, ptr);
+	// sl->ops.upgradelock(sl, ptr);
 
 	/* correct the counters and eventually remove the dirnode */
 
@@ -517,6 +493,25 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
 
     unlock:
 
+    logoutput("delete_nonempty_sl: unlock");
+
+    sl->ops.unlock(sl, ptr);
+
+    logoutput("delete_nonempty_sl: B");
+
+    destroy_vector_lanes(&vector);
+
+    if (row) *row=search_row;
+    return;
+
+    eagain:
+
+    *error=EAGAIN;
+    vector.minlevel=level+1;
+    unlock_dirnode_vector(&vector);
+    pthread_cond_broadcast(&sl->cond);
+    pthread_mutex_unlock(&sl->mutex);
+
     sl->ops.unlock(sl, ptr);
     destroy_vector_lanes(&vector);
 
@@ -527,6 +522,8 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
 void delete_sl(struct skiplist_struct *sl, void *lookupdata, unsigned int *row, unsigned int *error)
 {
     unsigned int count=0;
+
+    logoutput_warning("delete_sl");
 
     while(count<10) {
 

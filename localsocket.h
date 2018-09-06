@@ -32,6 +32,11 @@
 
 #define LISTEN_BACKLOG 50
 
+#define SOCKET_OPS_TYPE_UNIX						1
+#define SOCKET_OPS_TYPE_TCPIP						2
+#define SOCKET_OPS_TYPE_UDP						3
+#define SOCKET_OPS_TYPE_UDT						4
+
 struct fs_connection_s;
 
 typedef void (* event_cb)(struct fs_connection_s *conn, void *data, uint32_t events);
@@ -39,12 +44,31 @@ typedef struct fs_connection_s *(* accept_cb)(uid_t uid, gid_t gid, pid_t pid, s
 typedef void (* disconnect_cb)(struct fs_connection_s *conn, unsigned char remote);
 typedef void (* init_cb)(struct fs_connection_s *conn);
 
+struct socket_ops_s {
+    unsigned char			typer;
+    int					(* accept)(struct fs_connection_s *conn, struct sockaddr *addr, int *len);
+    int					(* bind)(struct fs_connection_s *conn, struct sockaddr *addr, int *len, int sock);
+    int					(* close)(struct fs_connection_s *conn);
+    int					(* connect)(struct fs_connection_s *conn, struct sockaddr *addr, int *len);
+    int					(* getpeername)(struct fs_connection_s *conn, struct sockaddr *addr, int *len);
+    int					(* gethostname)(struct fs_connection_s *conn, struct sockaddr *addr, int *len);
+    int					(* getsockopt)(struct fs_connection_s *conn, int level, SOCKOPT optname, char *optval, int *optlen);
+    int					(* setsockopt)(struct fs_connection_s *conn, int level, SOCKOPT optname, char *optval, int *optlen);
+    int					(* listen)(struct fs_connection_s *conn, int len);
+    int					(* recv)(struct fs_connection_s *conn, char *buffer, unsigned int size, unsigned int flags);
+    int					(* send)(struct fs_connection_s *conn, char *buffer, unsigned int size, unsigned int flags);
+    int					(* socket)(int af, int type, int protocol);
+    int					(* start)();
+    int					(* finish)();
+};
+
 struct fs_connection_s {
     unsigned char 			type;
     unsigned int 			fd;
     struct bevent_xdata_s		xdata;
     void 				*data;
     struct list_element_s		list;
+    struct socket_ops_s			*sops;
     union {
 	struct sockaddr_un 		local;
 	struct sockaddr_nl 		netlink;
@@ -72,8 +96,9 @@ struct fs_connection_s {
 int create_socket_path(struct pathinfo_s *pathinfo);
 int check_socket_path(struct pathinfo_s *pathinfo, unsigned int already);
 
-void init_connection(struct fs_connection_s *connection, unsigned char type);
+void init_connection(struct fs_connection_s *connection, struct socket_ops_s *sops, unsigned char type);
 int create_local_serversocket(char *path, struct fs_connection_s *conn, struct beventloop_s *loop, struct fs_connection_s *(* accept_cb)(uid_t uid, gid_t gid, pid_t pid, struct fs_connection_s *s_conn), unsigned int *error);
+int connect_remotesocket(struct fs_connection_s *conn, const struct sockaddr *addr, int len);
 
 struct fs_connection_s *get_containing_connection(struct list_element_s	*list);
 struct fs_connection_s *get_next_connection(struct fs_connection_s *s_conn, struct fs_connection_s *c_conn);

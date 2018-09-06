@@ -29,6 +29,7 @@
 #include "workspace-interface.h"
 #include "fuse-interface.h"
 #include "simple-list.h"
+#include "utils.h"
 
 #define WORKSPACE_RULE_POLICY_NONE		0
 #define WORKSPACE_RULE_POLICY_SUFFICIENT	1
@@ -166,10 +167,10 @@ struct service_fs_s {
     void (*releasedir) (struct fuse_opendir_s *opendir, struct fuse_request_s *request);
     void (*fsyncdir) (struct fuse_opendir_s *opendir, struct fuse_request_s *request, unsigned char datasync);
 
-    void (*setxattr) (struct service_context_s *context, struct fuse_request_s *request, struct pathinfo_s *pathinfo, const char *name, const char *value, size_t size, int flags);
-    void (*getxattr) (struct service_context_s *context, struct fuse_request_s *request, struct pathinfo_s *pathinfo, const char *name, size_t size);
-    void (*listxattr) (struct service_context_s *context, struct fuse_request_s *request, struct pathinfo_s *pathinfo, size_t size);
-    void (*removexattr) (struct service_context_s *context, struct fuse_request_s *request, struct pathinfo_s *pathinfo, const char *name);
+    void (*setxattr) (struct service_context_s *context, struct fuse_request_s *request, struct pathinfo_s *pathinfo, struct inode_s *inode, const char *name, const char *value, size_t size, int flags);
+    void (*getxattr) (struct service_context_s *context, struct fuse_request_s *request, struct pathinfo_s *pathinfo, struct inode_s *inode, const char *name, size_t size);
+    void (*listxattr) (struct service_context_s *context, struct fuse_request_s *request, struct pathinfo_s *pathinfo, struct inode_s *inode, size_t size);
+    void (*removexattr) (struct service_context_s *context, struct fuse_request_s *request, struct pathinfo_s *pathinfo, struct inode_s *inode, const char *name);
 
     void (*fsnotify)(struct service_context_s *context, struct fuse_request_s *request, struct pathinfo_s *pathinfo, uint64_t unique, uint32_t mask);
 
@@ -224,5 +225,6 @@ void free_workspace_mount(struct workspace_mount_s *workspace);
 int get_path_root(struct inode_s *inode, struct fuse_path_s *fpath);
 
 struct workspace_mount_s *get_container_workspace(struct list_element_s *list);
+void create_personal_workspace_mount(struct workspace_mount_s *w);
 
 #endif

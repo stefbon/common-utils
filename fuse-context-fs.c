@@ -482,17 +482,7 @@ static void service_fs_symlink(struct service_context_s *context, struct fuse_re
 	} else {
 
 	    reply_VFS_error(request, EPERM);
-
-	    if (entry) {
-		struct inode_s *inode=entry->inode;
-
-		remove_entry(entry, &error);
-		entry->inode=NULL;
-		destroy_entry(entry);
-
-		remove_inode(inode);
-
-	    }
+	    if (entry) remove_inode(&context->interface, entry->inode);
 
 	}
 
@@ -795,12 +785,7 @@ static void service_fs_create(struct fuse_openfile_s *openfile, struct fuse_requ
 
 	if (openfile->error>0) {
 
-	    remove_entry(entry, &error);
-	    entry->inode=NULL;
-	    destroy_entry(entry);
-
-	    remove_inode(openfile->inode);
-	    free(openfile->inode);
+	    remove_inode(&context->interface, openfile->inode);
 	    openfile->inode=NULL;
 
 	}
@@ -863,6 +848,160 @@ static void service_fs_opendir(struct fuse_opendir_s *opendir, struct fuse_reque
     unlock_pathcalls(pathcalls);
 
 }
+
+static void service_fs_setxattr(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, const char *name, const char *value, size_t size, int flags)
+{
+    unsigned int error=0;
+    struct entry_s *entry=inode->alias;
+    struct entry_s *parent=entry->parent;
+    struct directory_s *directory=NULL;
+    struct pathcalls_s *pathcalls=NULL;
+    unsigned int pathlen=get_pathmax(context->workspace);
+    char path[pathlen + 1];
+    struct pathinfo_s pathinfo=PATHINFO_INIT;
+    struct fuse_path_s fpath;
+
+    init_fuse_path(&fpath, path, pathlen);
+
+    pathcalls=get_pathcalls(parent->inode);
+    directory=get_directory(parent->inode);
+
+    if (! directory) {
+
+	reply_VFS_error(request, ENOMEM);
+	return;
+
+    }
+
+    pathinfo.len=add_name_path(&fpath, &entry->name);
+
+    lock_pathcalls(pathcalls);
+    pathinfo.len+=(* pathcalls->get_path)(directory, &fpath);
+    unlock_pathcalls(pathcalls);
+
+    context=fpath.context;
+    pathinfo.path=fpath.pathstart;
+
+    logoutput("_fs_setxattr_virtual: %s (thread %i): %s %s = %s", context->name, (int) gettid(), pathinfo.path, name, value);
+
+    (* context->fs->setxattr)(context, request, &pathinfo, inode, name, value, size, flags);
+}
+
+static void service_fs_getxattr(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, const char *name, size_t size)
+{
+    unsigned int error=0;
+    struct entry_s *entry=inode->alias;
+    struct entry_s *parent=entry->parent;
+    struct directory_s *directory=NULL;
+    struct pathcalls_s *pathcalls=NULL;
+    unsigned int pathlen=get_pathmax(context->workspace);
+    char path[pathlen + 1];
+    struct pathinfo_s pathinfo=PATHINFO_INIT;
+    struct fuse_path_s fpath;
+
+    init_fuse_path(&fpath, path, pathlen);
+
+    pathcalls=get_pathcalls(parent->inode);
+    directory=get_directory(parent->inode);
+
+    if (! directory) {
+
+	reply_VFS_error(request, ENOMEM);
+	return;
+
+    }
+
+    pathinfo.len=add_name_path(&fpath, &entry->name);
+
+    lock_pathcalls(pathcalls);
+    pathinfo.len+=(* pathcalls->get_path)(directory, &fpath);
+    unlock_pathcalls(pathcalls);
+
+    context=fpath.context;
+    pathinfo.path=fpath.pathstart;
+
+    logoutput("_fs_getxattr_virtual: %s (thread %i): %s %s", context->name, (int) gettid(), pathinfo.path, name);
+
+    (* context->fs->getxattr)(context, request, &pathinfo, inode, name, size);
+}
+
+static void service_fs_listxattr(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, size_t size)
+{
+    unsigned int error=0;
+    struct entry_s *entry=inode->alias;
+    struct entry_s *parent=entry->parent;
+    struct directory_s *directory=NULL;
+    struct pathcalls_s *pathcalls=NULL;
+    unsigned int pathlen=get_pathmax(context->workspace);
+    char path[pathlen + 1];
+    struct pathinfo_s pathinfo=PATHINFO_INIT;
+    struct fuse_path_s fpath;
+
+    init_fuse_path(&fpath, path, pathlen);
+
+    pathcalls=get_pathcalls(parent->inode);
+    directory=get_directory(parent->inode);
+
+    if (! directory) {
+
+	reply_VFS_error(request, ENOMEM);
+	return;
+
+    }
+
+    pathinfo.len=add_name_path(&fpath, &entry->name);
+
+    lock_pathcalls(pathcalls);
+    pathinfo.len+=(* pathcalls->get_path)(directory, &fpath);
+    unlock_pathcalls(pathcalls);
+
+    context=fpath.context;
+    pathinfo.path=fpath.pathstart;
+
+    logoutput("_fs_listxattr_virtual: %s (thread %i): %s", context->name, (int) gettid(), pathinfo.path);
+
+    (* context->fs->listxattr)(context, request, &pathinfo, inode, size);
+
+}
+
+static void service_fs_removexattr(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, const char *name)
+{
+    unsigned int error=0;
+    struct entry_s *entry=inode->alias;
+    struct entry_s *parent=entry->parent;
+    struct directory_s *directory=NULL;
+    struct pathcalls_s *pathcalls=NULL;
+    unsigned int pathlen=get_pathmax(context->workspace);
+    char path[pathlen + 1];
+    struct pathinfo_s pathinfo=PATHINFO_INIT;
+    struct fuse_path_s fpath;
+
+    init_fuse_path(&fpath, path, pathlen);
+
+    pathcalls=get_pathcalls(parent->inode);
+    directory=get_directory(parent->inode);
+
+    if (! directory) {
+
+	reply_VFS_error(request, ENOMEM);
+	return;
+
+    }
+
+    pathinfo.len=add_name_path(&fpath, &entry->name);
+
+    lock_pathcalls(pathcalls);
+    pathinfo.len+=(* pathcalls->get_path)(directory, &fpath);
+    unlock_pathcalls(pathcalls);
+
+    context=fpath.context;
+    pathinfo.path=fpath.pathstart;
+
+    logoutput("_fs_removexattr_virtual: %s (thread %i): %s %s", context->name, (int) gettid(), pathinfo.path);
+
+    (* context->fs->removexattr)(context, request, &pathinfo, inode, name);
+}
+
 
 /* FSNOTIFY */
 
@@ -1026,6 +1165,11 @@ static void init_service_fs()
     fs->type.dir.fsyncdir=service_fs_fsyncdir;
 
     fs->type.dir.fsnotify=service_fs_fsnotify;
+
+    fs->getxattr=service_fs_getxattr;
+    fs->setxattr=service_fs_setxattr;
+    fs->listxattr=service_fs_listxattr;
+    fs->removexattr=service_fs_removexattr;
 
     fs->statfs=service_fs_statfs;
 

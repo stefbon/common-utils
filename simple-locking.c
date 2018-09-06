@@ -354,24 +354,24 @@ void init_simple_writelock(struct simple_locking_s *locking, struct simple_lock_
 
 int simple_lock(struct simple_lock_s *lock)
 {
-    logoutput("simple_lock");
+    // logoutput("simple_lock");
     return (* lock->lock)(lock);
 }
 
 int simple_unlock(struct simple_lock_s *lock)
 {
-    logoutput("simple_unlock");
+    // logoutput("simple_unlock");
     return (* lock->unlock)(lock);
 }
 
 int simple_prelock(struct simple_lock_s *lock)
 {
-    logoutput("simple_prelock");
+    // logoutput("simple_prelock");
     return (* lock->prelock)(lock);
 }
 
 int simple_upgradelock(struct simple_lock_s *lock)
 {
-    logoutput("simple_upgradelock");
+    // logoutput("simple_upgradelock");
     return (* lock->upgrade)(lock);
 }

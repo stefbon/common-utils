@@ -21,6 +21,7 @@
 #define _FUSE_ENTRY_MANAGEMENT_H
 
 #include <linux/fuse.h>
+#include "workspace-interface.h"
 
 #define MODEMASK 07777
 
@@ -31,6 +32,16 @@
 #define _INODE_DIRECTORY_SIZE					4096
 #define _DEFAULT_BLOCKSIZE					4096
 
+#define FORGET_INODE_FLAG_QUEUE					1
+#define FORGET_INODE_FLAG_REMOVE_ENTRY				2
+#define FORGET_INODE_FLAG_DELETED				4
+#define FORGET_INODE_FLAG_NOTIFY_VFS				8
+
+#define INODE_LINK_TYPE_CONTEXT					1
+#define INODE_LINK_TYPE_ID					2
+#define INODE_LINK_TYPE_SPECIAL_ENTRY				3
+#define INODE_LINK_TYPE_DATA					4
+
 #include "skiplist.h"
 
 union datalink_u {
@@ -38,10 +49,17 @@ union datalink_u {
     uint64_t				id;
 };
 
+struct inode_link_s {
+    unsigned char			type;
+    union datalink_u			link;
+};
+
 struct inode_s {
+    unsigned char			flags;
     uint64_t 				ino;
-    uint64_t 				nlookup;
+    int64_t 				nlookup;
     struct inode_s 			*id_next;
+    struct inode_s 			*id_prev;
     struct entry_s 			*alias;
     mode_t				mode;
     nlink_t				nlink;
@@ -53,8 +71,7 @@ struct inode_s {
     struct timespec			atim;
     struct timespec			stim;
     struct fuse_fs_s			*fs;
-    unsigned int			link_type;
-    union datalink_u 			link;
+    struct inode_link_s			*inode_link;
 };
 
 struct name_s {
@@ -97,9 +114,29 @@ struct inode_s *create_inode();
 void add_inode_hashtable(struct inode_s *inode, void (*cb) (void *data), void *data);
 
 void fill_inode_stat(struct inode_s *inode, struct stat *st);
+void get_inode_stat(struct inode_s *inode, struct stat *st);
 
 struct inode_s *find_inode(uint64_t ino);
-struct inode_s *forget_inode(uint64_t ino, void (*cb) (void *data), void *data);
-void remove_inode(struct inode_s *inode);
+struct inode_s *forget_inode(struct context_interface_s *i, uint64_t ino, uint64_t lookup, void (*cb) (void *data), void *data, unsigned int flags);
+void remove_inode(struct context_interface_s *i, struct inode_s *inode);
+
+struct inode_link_s *create_inode_link_data(struct inode_s *inode, void *data, unsigned char type);
+struct inode_link_s *create_inode_link_id(struct inode_s *inode, uint64_t id);
+
+#define INODE_INFORMATION_OWNER						(1 << 0)
+#define INODE_INFORMATION_GROUP						(1 << 1)
+#define INODE_INFORMATION_NAME						(1 << 2)
+#define INODE_INFORMATION_NLOOKUP					(1 << 3)
+#define INODE_INFORMATION_MODE						(1 << 4)
+#define INODE_INFORMATION_NLINK						(1 << 5)
+#define INODE_INFORMATION_SIZE						(1 << 6)
+#define INODE_INFORMATION_MTIM						(1 << 7)
+#define INODE_INFORMATION_CTIM						(1 << 8)
+#define INODE_INFORMATION_ATIM						(1 << 9)
+#define INODE_INFORMATION_STIM						(1 << 10)
+#define INODE_INFORMATION_INODE_LINK					(1 << 11)
+#define INODE_INFORMATION_FS_COUNT					(1 << 12)
+
+void log_inode_information(struct inode_s *inode, uint64_t what);
 
 #endif

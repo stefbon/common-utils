@@ -26,6 +26,7 @@
 #define _INTERFACE_FUSE_MOUNT			3
 #define _INTERFACE_SMB_SERVERSHARE		4
 #define _INTERFACE_SFTP_SERVER			5
+#define _INTERFACE_NFS_EXPORT			6
 
 #define _INTERFACE_OPTION_INT			1
 #define _INTERFACE_OPTION_PCHAR			2
@@ -59,8 +60,16 @@ struct context_address_s {
 	struct sftp_server_s {
 	    char			*name;
 	} sftp;
+	struct nfs_export_s {
+	    char			*server;
+	    char			*dir;
+	} nfs;
     } target;
 };
+
+#define CONTEXT_INTERFACE_BACKEND_SFTP_PREFIX_HOME					1
+#define CONTEXT_INTERFACE_BACKEND_SFTP_PREFIX_ROOT					2
+#define CONTEXT_INTERFACE_BACKEND_SFTP_PREFIX_CUSTOM					3
 
 struct context_interface_s {
     void				*ptr;
@@ -72,12 +81,13 @@ struct context_interface_s {
     struct context_interface_s		*(*get_parent)(struct context_interface_s *interface);
     struct bevent_xdata_s 		*(*add_context_eventloop)(struct context_interface_s *interface, unsigned int fd, int (*read_incoming_data)(int fd, void *ptr, uint32_t events), void *ptr, const char *name, unsigned int *error);
     unsigned int			(* get_interface_option)(struct context_interface_s *interface, const char *name, struct context_option_s *option);
-    unsigned int			(* get_interface_info)(struct context_interface_s *interface, const char *what, void *data, unsigned char *buffer, unsigned int len, unsigned int *error);
+    unsigned int			(* get_interface_info)(struct context_interface_s *interface, const char *what, void *data, struct common_buffer_s *buffer);
     union {
 	struct sftp_ops_s {
 	    int					(* complete_path)(struct context_interface_s *interface, char *buffer, struct pathinfo_s *pathinfo);
 	    unsigned int			(* get_complete_pathlen)(struct context_interface_s *interface, unsigned int len);
 	    struct prefix_s {
+		unsigned char			type;
 		char				*path;
 		unsigned int			len;
 	    } prefix;

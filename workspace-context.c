@@ -97,15 +97,6 @@ void free_service_context(struct service_context_s *context)
 
     }
 
-    // if (context->inode) {
-	//struct inode_s *inode=context->inode;
-	//union datalink_u *link=get_datalink(inode);
-
-	//link->data=NULL;
-	//use_virtual_fs(NULL, inode);
-
-    //}
-
     logoutput("free_service_context: free context");
     free(context);
 
@@ -250,12 +241,6 @@ void add_inode_context(struct service_context_s *context, struct inode_s *inode)
 
     add_inode_hashtable(inode, increase_inodes_workspace, (void *) context->workspace);
     (* parent_inode->fs->type.dir.use_fs)(context, inode);
-
-    if (S_ISDIR(inode->mode)) {
-
-	inode->link.data=(void *) get_dummy_directory();
-
-    }
 
 }
 

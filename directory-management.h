@@ -63,6 +63,8 @@ struct directory_s {
     struct timespec 			synctime;
     struct skiplist_struct		skiplist;
     struct inode_s 			*inode;
+    struct directory_s			*next;
+    struct directory_s			*prev;
     unsigned int			count;
     struct simple_locking_s		locking;
     struct entry_s			*first;
@@ -74,7 +76,11 @@ struct directory_s {
 
 int init_directory(struct directory_s *directory, unsigned int *error);
 struct directory_s *_create_directory(struct inode_s *inode, void (* init_cb)(struct directory_s *directory), unsigned int *error);
+
 struct directory_s *get_directory(struct inode_s *inode);
+void _add_directory_hashtable(struct directory_s *directory);
+void _remove_directory_hashtable(struct directory_s *directory);
+
 void free_directory(struct directory_s *directory);
 void destroy_directory(struct directory_s *directory);
 
@@ -96,5 +102,8 @@ int lock_pathcalls(struct pathcalls_s *pathcalls);
 int unlock_pathcalls(struct pathcalls_s *pathcalls);
 
 unsigned int get_path_pathcalls(struct directory_s *directory, void *ptr);
+
+int init_directory_hashtable();
+void free_directory_hashtable();
 
 #endif
