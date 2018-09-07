@@ -52,8 +52,8 @@ struct socket_ops_s {
     int					(* connect)(struct fs_connection_s *conn, struct sockaddr *addr, int *len);
     int					(* getpeername)(struct fs_connection_s *conn, struct sockaddr *addr, int *len);
     int					(* gethostname)(struct fs_connection_s *conn, struct sockaddr *addr, int *len);
-    int					(* getsockopt)(struct fs_connection_s *conn, int level, SOCKOPT optname, char *optval, int *optlen);
-    int					(* setsockopt)(struct fs_connection_s *conn, int level, SOCKOPT optname, char *optval, int *optlen);
+    int					(* getsockopt)(struct fs_connection_s *conn, int level, char *optname, char *optval, int *optlen);
+    int					(* setsockopt)(struct fs_connection_s *conn, int level, char *optname, char *optval, int *optlen);
     int					(* listen)(struct fs_connection_s *conn, int len);
     int					(* recv)(struct fs_connection_s *conn, char *buffer, unsigned int size, unsigned int flags);
     int					(* send)(struct fs_connection_s *conn, char *buffer, unsigned int size, unsigned int flags);

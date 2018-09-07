@@ -71,7 +71,7 @@ static int default_gethostname(struct fs_connection_s *conn, struct sockaddr *ad
 {
     return gethostname(conn->fd, addr, len);
 }
-static int default_getsockopt(struct fs_connection_s *conn, int level, SOCKOPT n, char *v, int *l)
+static int default_getsockopt(struct fs_connection_s *conn, int level, char *n, char *v, int *l)
 {
     return gethostname(conn->fd, level, n, v, l);
 }
@@ -87,7 +87,7 @@ static int default_send(struct fs_connection_s *conn, char *buffer, unsigned int
 {
     return send(conn->fd, buffer, size, flags);
 }
-static int default_setsockopt(struct fs_connection_s *conn, int level, SOCKOPT n, char v, int l)
+static int default_setsockopt(struct fs_connection_s *conn, int level, char *n, char v, int l)
 {
     return gethostname(conn->fd, level, n, v, l);
 }

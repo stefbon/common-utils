@@ -72,10 +72,10 @@ int UDTgetsockname(struct fs_connection_s *conn, struct sockaddr *addr, int *len
     return UDT::getsockname(s, addr, len);
 }
 
-int UDTgetsockopt(struct fs_connection_s *conn, int level, SOCKOPT n, char *v, int *l)
+int UDTgetsockopt(struct fs_connection_s *conn, int level, char *n, char *v, int *l)
 {
     UDTSOCKET s=(UDTSOCKET) conn->fd;
-    return UDT::getsockopt(s, level, n, v, l);
+    return UDT::getsockopt(s, level, (SOCKOPT) n, v, l);
 }
 
 int UDTlisten(struct fs_connection_s *conn, int blog)
@@ -96,10 +96,10 @@ int UDTsend(struct fs_connection_s *conn, char *buffer, unsigned int size, unsig
     return UDT::send(s, buffer, size, flags);
 }
 
-int UDTsetsockopt(struct fs_connection_s *conn, int level, SOCKOPT n, char v, int l)
+int UDTsetsockopt(struct fs_connection_s *conn, int level, char *n, char v, int l)
 {
     UDTSOCKET s=(UDTSOCKET) conn->fd;
-    return UDT::getsockopt(s, level, n, v, l);
+    return UDT::getsockopt(s, level, (SOCKOPT) n, v, l);
 }
 
 int UDTsocket(int af, int type, int protocol)
