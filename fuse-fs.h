@@ -79,6 +79,7 @@ struct fuse_fs_s {
 
     int (*lock_datalink)(struct inode_s *inode);
     int (*unlock_datalink)(struct inode_s *inode);
+    int (*get_inode_link)(struct inode_s *inode, struct inode_link_s *link);
 
     void (*forget) (struct inode_s *inode);
 

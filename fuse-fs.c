@@ -74,6 +74,11 @@ int fs_unlock_datalink(struct inode_s *inode)
     return (* inode->fs->unlock_datalink)(inode);
 }
 
+int fs_get_inode_link(struct inode_s *inode, struct inode_link_s *link)
+{
+    return (* inode->fs->get_inode_link)(inode, link);
+}
+
 unsigned char get_fs_count(struct inode_s *inode)
 {
     return (* inode->fs->get_count)();
@@ -112,6 +117,8 @@ void fuse_fs_lookup(struct fuse_request_s *request)
     char *name=(char *) request->buffer;
     struct service_context_s *context=get_service_context(request->interface);
 
+    logoutput("fuse_fs_lookup");
+
     if (request->ino==FUSE_ROOT_ID) {
 	struct workspace_mount_s *workspace=context->workspace;
 	struct inode_s *inode=&workspace->rootinode;
@@ -140,6 +147,8 @@ void fuse_fs_getattr(struct fuse_request_s *request)
 {
     struct fuse_getattr_in *getattr_in=(struct fuse_getattr_in *) request->buffer;
     struct service_context_s *context=get_service_context(request->interface);
+
+    logoutput("fuse_fs_getattr");
 
     if (request->ino==FUSE_ROOT_ID) {
 	struct workspace_mount_s *workspace=context->workspace;
@@ -688,6 +697,8 @@ void _fuse_fs_opendir(struct service_context_s *context, struct inode_s *inode, 
 	opendir->fsyncdir=inode->fs->type.dir.fsyncdir;
 	opendir->data=NULL;
 
+	logoutput("_fuse_fs_opendir: fs defined %s", (inode->fs) ? "yes" : "no");
+
 	(* inode->fs->type.dir.opendir)(opendir, request, open_in->flags);
 
 	if (opendir->error>0) {
@@ -711,6 +722,8 @@ void fuse_fs_opendir(struct fuse_request_s *request)
 {
     struct service_context_s *context=get_service_context(request->interface);
     uint64_t ino=request->ino;
+
+    logoutput("fuse_fs_opendir");
 
     if (ino==FUSE_ROOT_ID) {
 	struct workspace_mount_s *workspace=context->workspace;
@@ -742,6 +755,8 @@ void fuse_fs_readdir(struct fuse_request_s *request)
     struct fuse_read_in *read_in=(struct fuse_read_in *) request->buffer;
     struct fuse_opendir_s *opendir=(struct fuse_opendir_s *) (uintptr_t) read_in->fh;
 
+    logoutput("fuse_fs_readdir");
+
     if (opendir) {
 	struct inode_s *inode=opendir->inode;
 
@@ -760,6 +775,8 @@ void fuse_fs_readdirplus(struct fuse_request_s *request)
     struct fuse_read_in *read_in=(struct fuse_read_in *) request->buffer;
     struct fuse_opendir_s *opendir=(struct fuse_opendir_s *) (uintptr_t) read_in->fh;
 
+    logoutput("fuse_fs_readdirplus");
+
     if (opendir) {
 	struct inode_s *inode=opendir->inode;
 
@@ -777,6 +794,8 @@ void fuse_fs_releasedir(struct fuse_request_s *request)
 {
     struct fuse_release_in *release_in=(struct fuse_release_in *) request->buffer;
     struct fuse_opendir_s *opendir=(struct fuse_opendir_s *) (uintptr_t) release_in->fh;
+
+    logoutput("fuse_fs_releasedir");
 
     if (opendir) {
 	struct inode_s *inode=opendir->inode;
@@ -1085,6 +1104,8 @@ void fuse_fs_getxattr(struct fuse_request_s *request)
 {
     struct service_context_s *context=get_service_context(request->interface);
     uint64_t ino=request->ino;
+
+    logoutput("fuse_fs_getxattr: ino %li", ino);
 
     if (ino==FUSE_ROOT_ID) {
 	struct workspace_mount_s *workspace=context->workspace;

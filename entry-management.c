@@ -258,6 +258,12 @@ void destroy_entry(struct entry_s *entry)
 
 }
 
+static int get_inode_link_dummy(struct inode_s *i, struct inode_link_s *link)
+{
+    link->type=0;
+    return 0;
+}
+
 void init_inode(struct inode_s *inode)
 {
 
@@ -286,7 +292,7 @@ void init_inode(struct inode_s *inode)
     inode->stim.tv_sec=0;
     inode->stim.tv_nsec=0;
 
-    inode->inode_link=NULL;
+    inode->get_inode_link=get_inode_link_dummy;
 
 }
 
@@ -349,7 +355,6 @@ struct inode_s *create_inode()
 
 void free_inode(struct inode_s *inode)
 {
-    if (inode->inode_link) free(inode->inode_link);
     free(inode);
 }
 
@@ -594,36 +599,14 @@ void remove_inode(struct context_interface_s *interface, struct inode_s *inode)
 
 }
 
-struct inode_link_s *create_inode_link_data(struct inode_s *inode, void *data, unsigned char type)
+void set_inode_link_cb(struct inode_s *inode, int (* get_inode_link_cb)(struct inode_s *i, struct inode_link_s *link))
 {
-    struct inode_link_s *link=malloc(sizeof(struct inode_link_s));
-
-    if (link) {
-
-	link->type=type;
-	link->link.data=data;
-	inode->inode_link=link;
-
-    }
-
-    return link;
-
+    inode->get_inode_link=get_inode_link_cb;
 }
 
-struct inode_link_s *create_inode_link_id(struct inode_s *inode, uint64_t id)
+void reset_inode_link_cb(struct inode_s *inode)
 {
-    struct inode_link_s *link=malloc(sizeof(struct inode_link_s));
-
-    if (link) {
-
-	link->type=INODE_LINK_TYPE_ID;
-	link->link.id=id;
-	inode->inode_link=link;
-
-    }
-
-    return link;
-
+    inode->get_inode_link=get_inode_link_dummy;
 }
 
 void log_inode_information(struct inode_s *inode, uint64_t what)
@@ -654,16 +637,10 @@ void log_inode_information(struct inode_s *inode, uint64_t what)
     if (what & INODE_INFORMATION_STIM) logoutput("log_inode_information: stim %li.%li", inode->stim.tv_sec, inode->stim.tv_nsec);
 
     if (what & INODE_INFORMATION_INODE_LINK) {
+	struct inode_link_s link;
 
-	if (inode->inode_link) {
-
-	    logoutput("log_inode_information: inode_link type %i", inode->inode_link->type);
-
-	} else {
-
-	    logoutput("log_inode_information: no inode_link");
-
-	}
+	(* inode->get_inode_link)(inode, &link);
+	logoutput("log_inode_information: inode_link type %i", link.type);
 
     }
 

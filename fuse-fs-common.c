@@ -284,6 +284,7 @@ void _fs_common_virtual_lookup(struct service_context_s *context, struct fuse_re
 
     if (entry) {
 	struct inode_s *inode=entry->inode;
+	struct inode_link_s link;
 
 	/* it's possible that the entry represents the root of a service
 	    in that case do a lookup of the '.' on the root of the service using the service specific fs calls
@@ -293,9 +294,10 @@ void _fs_common_virtual_lookup(struct service_context_s *context, struct fuse_re
 
 	logoutput("_fs_common_virtual_lookup: name %.*s nlookup %i", entry->name.len, entry->name.name, inode->nlookup);
 	inode->nlookup++;
+	fs_get_inode_link(inode, &link);
 
-	if (inode->inode_link->type==INODE_LINK_TYPE_CONTEXT && (((struct service_context_s *) inode->inode_link->link.data) != context)) {
-	    struct service_context_s *service_context=(struct service_context_s *) inode->inode_link->link.data;
+	if (link.type==INODE_LINK_TYPE_CONTEXT && (((struct service_context_s *) link.link.ptr) != context)) {
+	    struct service_context_s *service_context=(struct service_context_s *) link.link.ptr;
 	    struct pathinfo_s pathinfo=PATHINFO_INIT;
 	    unsigned int pathlen=2;
 	    char path[3];
@@ -714,6 +716,8 @@ static void _fs_common_create_cb_created(struct entry_s *entry, void *data)
 
     }
 
+    logoutput("_fs_common_create_cb_created: finish");
+
 }
 
 static void _fs_common_create_cb_found(struct entry_s *entry, void *data)
@@ -749,11 +753,16 @@ static void _fs_common_create_cb_error(struct entry_s *parent, struct name_s *xn
 struct entry_s *_fs_common_create_entry(struct workspace_mount_s *workspace, struct entry_s *parent, struct name_s *xname, struct stat *st, unsigned char mayexist, unsigned int *error)
 {
     struct _fs_common_create_struct _create_common;
+    unsigned int dummy=0;
+
+    if (error==0) error=&dummy;
 
     _create_common.workspace=workspace;
     _create_common.st=st;
     _create_common.mayexist=mayexist;
     _create_common.error=error;
+
+    logoutput("_fs_common_create_entry");
 
     return create_entry_extended(parent, xname, _fs_common_create_cb_created, _fs_common_create_cb_found, _fs_common_create_cb_error, (void *) &_create_common);
 
@@ -762,13 +771,16 @@ struct entry_s *_fs_common_create_entry(struct workspace_mount_s *workspace, str
 struct entry_s *_fs_common_create_entry_unlocked(struct workspace_mount_s *workspace, struct directory_s *directory, struct name_s *xname, struct stat *st, unsigned char mayexist, unsigned int *error)
 {
     struct _fs_common_create_struct _create_common;
+    unsigned int dummy=0;
 
-    logoutput("_fs_common_create_entry_unlocked: error %i:%s creating %s", error, strerror(error), xname->name);
+    if (error==0) error=&dummy;
 
     _create_common.workspace=workspace;
     _create_common.st=st;
     _create_common.mayexist=mayexist;
     _create_common.error=error;
+
+    logoutput("_fs_common_create_entry_unlocked");
 
     return create_entry_extended_batch(directory, xname, _fs_common_create_cb_created, _fs_common_create_cb_found, _fs_common_create_cb_error, (void *) &_create_common);
 

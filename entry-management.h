@@ -41,11 +41,12 @@
 #define INODE_LINK_TYPE_ID					2
 #define INODE_LINK_TYPE_SPECIAL_ENTRY				3
 #define INODE_LINK_TYPE_DATA					4
+#define INODE_LINK_TYPE_DIRECTORY				5
 
 #include "skiplist.h"
 
 union datalink_u {
-    void				*data;
+    void				*ptr;
     uint64_t				id;
 };
 
@@ -71,7 +72,7 @@ struct inode_s {
     struct timespec			atim;
     struct timespec			stim;
     struct fuse_fs_s			*fs;
-    struct inode_link_s			*inode_link;
+    int					(* get_inode_link)(struct inode_s *i, struct inode_link_s *link);
 };
 
 struct name_s {
@@ -120,8 +121,8 @@ struct inode_s *find_inode(uint64_t ino);
 struct inode_s *forget_inode(struct context_interface_s *i, uint64_t ino, uint64_t lookup, void (*cb) (void *data), void *data, unsigned int flags);
 void remove_inode(struct context_interface_s *i, struct inode_s *inode);
 
-struct inode_link_s *create_inode_link_data(struct inode_s *inode, void *data, unsigned char type);
-struct inode_link_s *create_inode_link_id(struct inode_s *inode, uint64_t id);
+void set_inode_link_cb(struct inode_s *inode, int (* get_inode_link_cb)(struct inode_s *i, struct inode_link_s *link));
+void reset_inode_link_cb(struct inode_s *inode);
 
 #define INODE_INFORMATION_OWNER						(1 << 0)
 #define INODE_INFORMATION_GROUP						(1 << 1)

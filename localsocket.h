@@ -45,15 +45,15 @@ typedef void (* disconnect_cb)(struct fs_connection_s *conn, unsigned char remot
 typedef void (* init_cb)(struct fs_connection_s *conn);
 
 struct socket_ops_s {
-    unsigned char			typer;
-    int					(* accept)(struct fs_connection_s *conn, struct sockaddr *addr, int *len);
+    unsigned char			type;
+    int					(* accept)(struct fs_connection_s *conn, struct sockaddr *addr, unsigned int *len);
     int					(* bind)(struct fs_connection_s *conn, struct sockaddr *addr, int *len, int sock);
     int					(* close)(struct fs_connection_s *conn);
     int					(* connect)(struct fs_connection_s *conn, struct sockaddr *addr, int *len);
-    int					(* getpeername)(struct fs_connection_s *conn, struct sockaddr *addr, int *len);
-    int					(* gethostname)(struct fs_connection_s *conn, struct sockaddr *addr, int *len);
-    int					(* getsockopt)(struct fs_connection_s *conn, int level, char *optname, char *optval, int *optlen);
-    int					(* setsockopt)(struct fs_connection_s *conn, int level, char *optname, char *optval, int *optlen);
+    int					(* getpeername)(struct fs_connection_s *conn, struct sockaddr *addr, unsigned int *len);
+    int					(* getsockname)(struct fs_connection_s *conn, struct sockaddr *addr, unsigned int *len);
+    int					(* getsockopt)(struct fs_connection_s *conn, int level, int optname, char *optval, unsigned int *optlen);
+    int					(* setsockopt)(struct fs_connection_s *conn, int level, int optname, char *optval, unsigned int optlen);
     int					(* listen)(struct fs_connection_s *conn, int len);
     int					(* recv)(struct fs_connection_s *conn, char *buffer, unsigned int size, unsigned int flags);
     int					(* send)(struct fs_connection_s *conn, char *buffer, unsigned int size, unsigned int flags);
@@ -98,7 +98,7 @@ int check_socket_path(struct pathinfo_s *pathinfo, unsigned int already);
 
 void init_connection(struct fs_connection_s *connection, struct socket_ops_s *sops, unsigned char type);
 int create_local_serversocket(char *path, struct fs_connection_s *conn, struct beventloop_s *loop, struct fs_connection_s *(* accept_cb)(uid_t uid, gid_t gid, pid_t pid, struct fs_connection_s *s_conn), unsigned int *error);
-int connect_remotesocket(struct fs_connection_s *conn, const struct sockaddr *addr, int len);
+int connect_remotesocket(struct fs_connection_s *conn, const struct sockaddr *addr, int *len);
 
 struct fs_connection_s *get_containing_connection(struct list_element_s	*list);
 struct fs_connection_s *get_next_connection(struct fs_connection_s *s_conn, struct fs_connection_s *c_conn);

@@ -78,27 +78,23 @@ static void service_fs_forget(struct inode_s *inode)
 {
 
     if (fs_lock_datalink(inode)==0) {
-	struct inode_link_s *link=inode->inode_link;
+	struct inode_link_s link;
 
-	if (link) {
-	    struct service_context_s *context=NULL;
+	fs_get_inode_link(inode, &link);
 
-	    context=(struct service_context_s *) link->link.data;
+	if (link.type==INODE_LINK_TYPE_CONTEXT) {
+	    struct service_context_s *context=(struct service_context_s *) link.link.ptr;
+	    struct workspace_mount_s *workspace=context->workspace;
+	    struct fuse_user_s *user=workspace->user;
 
-	    if (context) {
-		struct workspace_mount_s *workspace=context->workspace;
-		struct fuse_user_s *user=workspace->user;
+	    logoutput("FORGET root %s", context->name);
 
-		logoutput("FORGET root %s", context->name);
+	    (* context->interface.free)(&context->interface);
+	    remove_list_element(&workspace->contexes.head, &workspace->contexes.tail, &context->list);
+	    if (context->parent) context->parent->refcount--;
+	    free_service_context(context);
 
-		(* context->interface.free)(&context->interface);
-		remove_list_element(&workspace->contexes.head, &workspace->contexes.tail, &context->list);
-		if (context->parent) context->parent->refcount--;
-		free_service_context(context);
-
-		link->link.data=NULL;
-
-	    }
+	    reset_inode_link_cb(inode);
 
 	}
 
@@ -110,8 +106,10 @@ static void service_fs_forget(struct inode_s *inode)
 
 static struct service_context_s *get_context_root_inode(struct inode_s *pinode)
 {
-    struct inode_link_s *link=pinode->inode_link;
-    return (struct service_context_s *) (link) ? link->link.data : NULL;
+    struct inode_link_s link;
+
+    fs_get_inode_link(pinode, &link);
+    return (link.type==INODE_LINK_TYPE_CONTEXT) ? ((struct service_context_s *) (link.link.ptr)) : NULL;
 }
 
 /* LOOKUP */

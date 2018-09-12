@@ -53,6 +53,7 @@
 #include "entry-management.h"
 #include "directory-management.h"
 #include "entry-utils.h"
+#include "simple-hash.h"
 
 #include "fuse-interface.h"
 
@@ -67,16 +68,54 @@ static struct fuse_fs_s fs;
 static char *desktopentryname=".directory";
 static pthread_mutex_t desktopmutex=PTHREAD_MUTEX_INITIALIZER;
 static struct statfs statfs_keep;
+static struct simple_hash_s special_entries;
+
+struct special_path_s {
+    uint64_t					ino;
+    unsigned int				size;
+    char					path[];
+};
+
+static unsigned int calculate_special_entry_hash(uint64_t ino)
+{
+    return (ino % special_entries.len);
+}
+
+static unsigned int get_special_entry_hash(void *ptr)
+{
+    struct special_path_s *s=(struct special_path_s *) ptr;
+    return calculate_special_entry_hash(s->ino);
+}
 
 static void _fs_special_forget(struct inode_s *inode)
 {
+    struct inode_link_s link;
 
-    if (inode->inode_link) {
-	struct inode_link_s *link=inode->inode_link;
+    fs_get_inode_link(inode, &link);
 
-	if (link->link.data) free(link->link.data);
-	free(link);
-	inode->inode_link=NULL;
+    if (inode->ino>0) {
+	unsigned int hashvalue=calculate_special_entry_hash(inode->ino);
+	void *index=NULL;
+	void *ptr=NULL;
+	struct simple_lock_s lock;
+	struct special_path_s *s=NULL;
+
+	init_wlock_hashtable(&special_entries, &lock);
+
+	ptr=get_next_hashed_value(&special_entries, &index, hashvalue);
+
+	while (ptr) {
+
+	    s=(struct special_path_s *) ptr;
+	    if (s->ino==inode->ino) break;
+
+	    ptr=get_next_hashed_value(&special_entries, &index, hashvalue);
+	    s=NULL;
+
+	}
+
+	if (s) remove_data_from_hash(&special_entries, (void *) s);
+	unlock_hashtable(&lock);
 
     }
 
@@ -113,28 +152,27 @@ static void _fs_special_open(struct fuse_openfile_s *openfile, struct fuse_reque
 {
     unsigned int error=EIO;
     struct inode_s *inode=openfile->inode;
+    int fd=0;
+    struct inode_link_s link;
 
-    if (inode->inode_link) {
-	int fd=0;
+    fs_get_inode_link(inode, &link);
 
-	fd=open(inode->inode_link->link.data, flags);
+    fd=open((char *) link.link.ptr, flags);
 
-	if (fd>0) {
-	    struct fuse_open_out open_out;
+    if (fd>0) {
+	struct fuse_open_out open_out;
 
-	    openfile->handle.fd=fd;
+	openfile->handle.fd=fd;
 
-	    open_out.fh=(uint64_t) openfile;
-	    open_out.open_flags=0; //FOPEN_KEEP_CACHE;
-	    open_out.padding=0;
-	    reply_VFS_data(request, (char *) &open_out, sizeof(open_out));
-	    return;
+	open_out.fh=(uint64_t) openfile;
+	open_out.open_flags=0; //FOPEN_KEEP_CACHE;
+	open_out.padding=0;
+	reply_VFS_data(request, (char *) &open_out, sizeof(open_out));
+	return;
 
-	} else {
+    } else {
 
-	    error=errno;
-
-	}
+	error=errno;
 
     }
 
@@ -220,6 +258,7 @@ static void _fs_special_statfs(struct service_context_s *context, struct fuse_re
 
 void init_special_fs()
 {
+    unsigned int error=0;
 
     statfs("/", &statfs_keep);
 
@@ -238,6 +277,13 @@ void init_special_fs()
     fs.type.nondir.fgetattr=_fs_special_fgetattr;
     fs.statfs=_fs_special_statfs;
 
+    initialize_group(&special_entries, get_special_entry_hash, 256, &error);
+
+}
+
+void free_special_fs()
+{
+    free_group(&special_entries, NULL);
 }
 
 void set_fs_special(struct inode_s *inode)
@@ -260,26 +306,36 @@ void create_desktopentry_file(char *path, struct entry_s *parent, struct workspa
     if (lstat(path, &st)==0 && S_ISREG(st.st_mode)) {
 	struct name_s xname;
 	unsigned int error=0;
+	struct directory_s *directory=get_directory(parent->inode);
 
 	xname.name=desktopentryname;
 	xname.len=strlen(xname.name);
 	calculate_nameindex(&xname);
 
-	struct entry_s *entry=_fs_common_create_entry(workspace, parent, &xname, &st, 0, &error);
+	logoutput("create_desktopentry_file: A");
+
+	struct entry_s *entry=_fs_common_create_entry_unlocked(workspace, directory, &xname, &st, 0, &error);
 
 	if (entry) {
-	    char *duppath=strdup(path);
+	    struct special_path_s *s=malloc(sizeof(struct special_path_s) + strlen(path) + 1); /* inlcuding terminating zero */
 
-	    entry->inode->fs=&fs;
+	    if (s) {
+		struct simple_lock_s lock;
 
-	    if (duppath && create_inode_link_data(entry->inode, (void *) duppath, INODE_LINK_TYPE_SPECIAL_ENTRY)) {
+		logoutput("create_desktopentry_file: B");
+
+		entry->inode->fs=&fs;
+		s->ino=entry->inode->ino;
+		strcpy(s->path, path);
+		s->size=strlen(path);
+
+		init_wlock_hashtable(&special_entries, &lock);
 
 		logoutput("create_desktopentry_file: created entry");
 
-	    } else {
-
-		logoutput("create_desktopentry_file: failed to created entry link");
-		if (duppath) free(duppath);
+		lock_hashtable(&lock);
+		add_data_to_hash(&special_entries, (void *) s);
+		unlock_hashtable(&lock);
 
 	    }
 

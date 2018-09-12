@@ -32,9 +32,11 @@
 #include <sys/types.h>
 
 #include <arpa/inet.h>
-#include <udt-interface.h>
 
 #ifdef HAVE_LIBUDT
+
+#include <udt/udt.h>
+#include <udt-interface.h>
 
 int UDTaccept(struct fs_connection_s *conn, struct sockaddr *addr, int *len)
 {

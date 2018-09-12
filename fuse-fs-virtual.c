@@ -84,6 +84,16 @@ static int _unlock_datalink(struct inode_s *inode)
     return pthread_mutex_unlock(&datalink_mutex);
 }
 
+static int get_inode_link_nondir(struct inode_s *inode, struct inode_link_s *link)
+{
+    return (* inode->get_inode_link)(inode, link);
+}
+
+static int get_inode_link_dir(struct inode_s *inode, struct inode_link_s *link)
+{
+    return get_inode_link_directory(inode, link);
+}
+
 static void _fs_forget(struct inode_s *inode)
 {
 }
@@ -277,6 +287,8 @@ static void _set_virtual_fs(struct fuse_fs_s *fs)
 
     if ((fs->flags & FS_SERVICE_FLAG_DIR) || (fs->flags & FS_SERVICE_FLAG_ROOT)) {
 
+	fs->get_inode_link= get_inode_link_dir;
+
 	fs->type.dir.use_fs=use_virtual_fs;
 
 	fs->type.dir.lookup=_fs_lookup;
@@ -300,6 +312,8 @@ static void _set_virtual_fs(struct fuse_fs_s *fs)
 	fs->type.dir.fsnotify=_fs_fsnotify;
 
     } else {
+
+	fs->get_inode_link= get_inode_link_nondir;
 
 	fs->type.nondir.readlink=_fs_readlink;
 

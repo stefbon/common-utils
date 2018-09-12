@@ -84,6 +84,7 @@ int get_service_path_default(struct inode_s *inode, struct fuse_path_s *fpath)
     struct fuse_fs_s *fs=inode->fs;
     unsigned int pathlen=0;
     struct name_s *xname=NULL;
+    struct inode_link_s link;
 
     appendname:
 
@@ -101,11 +102,12 @@ int get_service_path_default(struct inode_s *inode, struct fuse_path_s *fpath)
     inode=entry->inode;
     fs=inode->fs;
 
-    if (inode->inode_link==NULL || inode->inode_link->type!=INODE_LINK_TYPE_CONTEXT) goto appendname;
+    fs_get_inode_link(inode, &link);
+    if (link.type!=INODE_LINK_TYPE_CONTEXT) goto appendname;
 
     /* inode is the "root" of the service: data is holding the context */
 
-    fpath->context=(struct service_context_s *) inode->inode_link->link.data;
+    fpath->context=(struct service_context_s *) link.link.ptr;
     return pathlen;
 
 }
@@ -158,10 +160,8 @@ static int get_service_path_cached(struct directory_s *directory, void *ptr)
 static int get_service_path_root(struct directory_s *directory, void *ptr)
 {
     struct fuse_path_s *fpath=(struct fuse_path_s *) ptr;
-    union datalink_u *link=NULL;
 
-    link=&directory->link;
-    fpath->context=(struct service_context_s *) link->data;
+    fpath->context=(struct service_context_s *) directory->link.link.ptr;
     return 0;
 
 }

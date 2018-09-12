@@ -70,14 +70,19 @@ struct directory_s {
     struct entry_s			*first;
     struct entry_s			*last;
     struct dops_s 			*dops;
-    union datalink_u			link;
+    struct inode_link_s			link;
     struct pathcalls_s			pathcalls;
 };
 
 int init_directory(struct directory_s *directory, unsigned int *error);
 struct directory_s *_create_directory(struct inode_s *inode, void (* init_cb)(struct directory_s *directory), unsigned int *error);
 
+int get_directory_link(struct inode_s *inode, struct inode_link_s *link);
 struct directory_s *get_directory(struct inode_s *inode);
+
+int get_inode_link_directory(struct inode_s *inode, struct inode_link_s *link);
+void set_inode_link_directory(struct inode_s *inode, struct inode_link_s *link);
+
 void _add_directory_hashtable(struct directory_s *directory);
 void _remove_directory_hashtable(struct directory_s *directory);
 

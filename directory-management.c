@@ -404,6 +404,8 @@ int init_directory(struct directory_s *directory, unsigned int *error)
 {
     int result=0;
 
+    logoutput_warning("init_directory");
+
     memset(directory, 0, sizeof(struct directory_s));
 
     directory->flags=0;
@@ -427,6 +429,8 @@ int init_directory(struct directory_s *directory, unsigned int *error)
     directory->last=NULL;
 
     directory->dops=NULL;
+    directory->link.type=0;
+    directory->link.link.ptr=NULL;
 
     result=init_skiplist(&directory->skiplist, 4, get_next_entry, get_prev_entry,
 			compare_entry, insert_before_entry, insert_after_entry, delete_entry,
@@ -445,14 +449,16 @@ int init_directory(struct directory_s *directory, unsigned int *error)
 
 }
 
-struct directory_s *get_directory(struct inode_s *inode)
+/* search the directory using a hash table
+    search is misleading a bit here, since it's always defined: a default value is taken (&dummy_directory)*/
+
+static struct directory_s *search_directory(struct inode_s *inode)
 {
     unsigned int hashvalue = inode->ino % 2048;
     struct directory_s *directory=get_dummy_directory(); /* default value */
     struct directory_s *search=NULL;
 
     pthread_mutex_lock(&directory_hashtable_mutex);
-
     search=directory_hashtable[hashvalue];
 
     while (search) {
@@ -469,8 +475,37 @@ struct directory_s *get_directory(struct inode_s *inode)
     }
 
     pthread_mutex_unlock(&directory_hashtable_mutex);
-
     return directory;
+}
+
+int get_directory_link(struct inode_s *inode, struct inode_link_s *link)
+{
+    struct directory_s *directory=search_directory(inode);
+
+    link->type=INODE_LINK_TYPE_DIRECTORY;
+    link->link.ptr=(void *) directory;
+    return 0;
+}
+
+struct directory_s *get_directory(struct inode_s *inode)
+{
+    struct inode_link_s link;
+    get_directory_link(inode, &link);
+    return (struct directory_s *) link.link.ptr;
+}
+
+int get_inode_link_directory(struct inode_s *inode, struct inode_link_s *link)
+{
+    struct directory_s *directory=get_directory(inode);
+    memcpy(link, &directory->link, sizeof(struct inode_link_s));
+    return 0;
+}
+
+void set_inode_link_directory(struct inode_s *inode, struct inode_link_s *link)
+{
+    struct directory_s *directory=get_directory(inode);
+    memcpy(&directory->link, link, sizeof(struct inode_link_s));
+    return 0;
 }
 
 void _add_directory_hashtable(struct directory_s *directory)
@@ -517,6 +552,8 @@ void _remove_directory_hashtable(struct directory_s *directory)
 struct directory_s *_create_directory(struct inode_s *inode, void (* init_cb)(struct directory_s *directory), unsigned int *error)
 {
     struct directory_s *directory=NULL;
+
+    logoutput_warning("_create_directory");
 
     directory=malloc(sizeof(struct directory_s));
 

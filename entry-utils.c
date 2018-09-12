@@ -840,9 +840,14 @@ struct entry_s *create_entry_extended_batch(struct directory_s *directory,
 					    void (* cb_error)(struct entry_s *parent, struct name_s *xname, void *data, unsigned int error),
 					    void *data)
 {
-    struct entry_s *entry=NULL, *result=NULL, *parent=directory->inode->alias;
+    struct entry_s *entry=NULL, *result=NULL, *parent=NULL;
     struct inode_s *inode=NULL;
     unsigned error=0;
+
+    logoutput("create_entry_extended_batch: d defined %s", (directory) ? "yes" : "no");
+    logoutput("create_entry_extended_batch: i defined %s", (directory->inode) ? "yes" : "no");
+
+    parent=directory->inode->alias;
 
     entry=create_entry(parent, xname);
     inode=create_inode();

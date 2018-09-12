@@ -248,3 +248,9 @@ struct service_context_s *get_container_context(struct list_element_s *list)
 {
     return (list) ? (struct service_context_s *) ( ((char *) list) - offsetof(struct service_context_s, list)) : NULL;
 }
+
+struct inode_link_s *get_inode_link_context(struct inode_s *inode, struct inode_link_s *link)
+{
+    link->type=INODE_LINK_TYPE_CONTEXT;
+    return get_inode_link_directory(inode, link);
+}
