@@ -17,8 +17,12 @@
 
 */
 
+#ifndef _REENTRANT
 #define _REENTRANT
+#endif
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,6 +55,7 @@
 static struct beventloop_s beventloop_main;
 static pthread_mutex_t global_mutex=PTHREAD_MUTEX_INITIALIZER;
 static unsigned char init=0;
+static char *name="beventloop";
 
 int lock_beventloop(struct beventloop_s *loop)
 {
@@ -77,13 +82,11 @@ static void clear_eventloop(struct beventloop_s *loop)
     memset(loop, 0, sizeof(struct beventloop_s));
 
     loop->status=0;
-    loop->xdata_list.head=NULL;
-    loop->xdata_list.tail=NULL;
+    init_list_header(&loop->xdata_list.header, SIMPLE_LIST_TYPE_EMPTY, NULL);
     loop->cb_signal=signal_cb_dummy;
     loop->fd=0;
 
-    timers->head=NULL;
-    timers->tail=NULL;
+    init_list_header(&timers->header, SIMPLE_LIST_TYPE_EMPTY, NULL);
     timers->fd=0;
     timers->run_expired=_run_expired_dummy;
     pthread_mutex_init(&timers->mutex, NULL);
@@ -112,12 +115,17 @@ int init_beventloop(struct beventloop_s *loop, unsigned int *error)
 
     if (loop->fd==-1) {
 
+	logoutput("init_beventloop: error %i creating epoll instance (%s)", errno, strerror(errno));
+
 	*error=errno;
 	goto error;
 
     }
 
     loop->status=BEVENTLOOP_STATUS_SETUP;
+    init_list_header(&loop->xdata_list.header, SIMPLE_LIST_TYPE_EMPTY, NULL);
+    loop->xdata_list.header.name=name;
+    init_list_header(&loop->timer_list.header, SIMPLE_LIST_TYPE_EMPTY, NULL);
     return 0;
 
     error:
@@ -163,6 +171,7 @@ int start_beventloop(struct beventloop_s *loop)
         for (unsigned int i=0; i<count; i++) {
 
             xdata=(struct bevent_xdata_s *) epoll_events[i].data.ptr;
+            logoutput("start_beventloop: xdata name %s", xdata->name);
 	    result=(*xdata->callback) (xdata->fd, xdata->data, epoll_events[i].events);
 
         }
@@ -201,7 +210,7 @@ void clear_beventloop(struct beventloop_s *loop)
 
     getxdata:
 
-    list=get_list_head(&loop->xdata_list.head, &loop->xdata_list.tail);
+    list=get_list_head(&loop->xdata_list.header, 0);
 
     if (list) {
 	struct bevent_xdata_s *xdata=get_containing_xdata(list);
@@ -237,7 +246,7 @@ void clear_beventloop(struct beventloop_s *loop)
 
     gettimer:
 
-    list=get_list_head(&loop->timer_list.head, &loop->timer_list.tail);
+    list=get_list_head(&loop->timer_list.header, 0);
 
     if (list) {
 	struct timerentry_s *entry=get_containing_timerentry(list);

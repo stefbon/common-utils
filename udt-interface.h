@@ -17,8 +17,8 @@
 
 */
 
-#ifndef COMMON_UDT_INTERFACE_H
-#define COMMON_UDT_INTERFACE_H
+#ifndef SB_COMMON_UTILS_UDT_INTERFACE_H
+#define SB_COMMON_UTILS_UDT_INTERFACE_H
 
 #include "localsocket.h"
 

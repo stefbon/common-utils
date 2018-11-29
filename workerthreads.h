@@ -17,8 +17,8 @@
 
 */
 
-#ifndef GENERIC_WORKERTHREADS_H
-#define GENERIC_WORKERTHREADS_H
+#ifndef SB_COMMON_UTILS_WORKERTHREADS_H
+#define SB_COMMON_UTILS_WORKERTHREADS_H
 
 // Prototypes
 
@@ -31,5 +31,6 @@ void terminate_workerthreads(void *queue, unsigned int timeout);
 void set_max_numberthreads(void *queue, unsigned int m);
 unsigned get_numberthreads(void *queue);
 unsigned get_max_numberthreads(void *queue);
+void start_default_workerthreads(void *ptr);
 
 #endif

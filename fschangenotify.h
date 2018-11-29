@@ -17,8 +17,8 @@
 
 */
 
-#ifndef _FSCHANGENOTIFY_H
-#define _FSCHANGENOTIFY_H
+#ifndef SB_COMMON_UTILS_FSCHANGENOTIFY_H
+#define SB_COMMON_UTILS_FSCHANGENOTIFY_H
 
 #include "simple-list.h"
 

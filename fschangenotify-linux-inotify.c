@@ -241,7 +241,7 @@ int set_watch_backend_inotify(struct notifywatch_s *watch, uint32_t mask)
 
 	    error=errno;
 
-    	    logoutput_error("set_watch_backend_inotify: setting inotify watch on %s gives error: %i (%s)", watch->pathinfo.path, error, strerror(error));
+    	    logoutput_error("set_watch_backend_inotify: setting inotify watch on %s (fd=%i)gives error: %i (%s)", watch->pathinfo.path, xdata_inotify.fd, error, strerror(error));
 
 	} else {
 	    struct inotify_watch_s *inotify_watch=NULL;

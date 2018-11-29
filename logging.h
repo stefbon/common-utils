@@ -18,14 +18,22 @@
 
 */
 
+#ifndef SB_COMMON_UTILS_LOGGING
+#define SB_COMMON_UTILS_LOGGING
+
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <stdarg.h>
 #include <errno.h>
 #include <err.h>
 #include <syslog.h>
+#include <unistd.h>
 #include <sys/syscall.h>
 
-struct logoutput_s {
+#include <syslog.h>
+
+struct logging_s {
     void 			(* debug)(const char *fmt, ...);
     void 			(* info)(const char *fmt, ...);
     void 			(* notice)(const char *fmt, ...);
@@ -35,18 +43,19 @@ struct logoutput_s {
 
 // #ifdef LOGGING
 
-extern struct logoutput_s logging;
+struct logging_s *logging;
 
 /* without extension defaults to debug */
-#define logoutput(...) logging.info(__VA_ARGS__)
+#define logoutput(...) (* logging->info)(__VA_ARGS__)
 
-#define logoutput_debug(...) logging.debug(__VA_ARGS__)
-#define logoutput_info(...) logging.info(__VA_ARGS__)
-#define logoutput_notice(...) logging.notice(__VA_ARGS__)
-#define logoutput_warning(...) logging.warning(__VA_ARGS__)
-#define logoutput_error(...) logging.error(__VA_ARGS__)
+#define logoutput_debug(...) (* logging->debug)(__VA_ARGS__)
+#define logoutput_info(...) (* logging->info)(__VA_ARGS__)
+#define logoutput_notice(...) (* logging->notice)(__VA_ARGS__)
+#define logoutput_warning(...) (* logging->warning)(__VA_ARGS__)
+#define logoutput_error(...) (* logging->error)(__VA_ARGS__)
 
 
 unsigned int gettid();
 void switch_logging_backend(const char *what);
-void switch_default_loglevel(const char *what);
+
+#endif

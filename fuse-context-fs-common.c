@@ -43,12 +43,11 @@
 #include "pathinfo.h"
 #include "main.h"
 #include "beventloop.h"
+#include "utils.h"
 
 #include "entry-management.h"
 #include "directory-management.h"
 #include "entry-utils.h"
-
-#include "utils.h"
 
 #include "fuse-fs.h"
 #include "workspaces.h"

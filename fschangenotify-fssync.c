@@ -128,7 +128,7 @@ static void synchronize_directory_full(struct workspace_object_struct *object, s
 	calculate_nameindex(&xname);
 
 	entry=create_entry(parent, &xname);
-	inode=create_inode();
+	inode=create_inode(0);
 
 	*error=0;
 
@@ -268,7 +268,7 @@ static void synchronize_directory_simple(struct workspace_object_struct *object,
 	if (! entry) {
 
 	    entry=create_entry(parent, &xname);
-	    inode=create_inode();
+	    inode=create_inode(0);
 
 	    *error=0;
 

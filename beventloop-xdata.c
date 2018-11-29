@@ -16,9 +16,12 @@
   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
-
+#ifndef _REENTRANT
 #define _REENTRANT
+#endif
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -106,12 +109,13 @@ void init_xdata(struct bevent_xdata_s *xdata)
 {
     unsigned int error=0;
 
+    memset(xdata, 0, sizeof(struct bevent_xdata_s));
+
     xdata->fd=0;
     xdata->data=NULL;
     xdata->status=0;
     xdata->callback=NULL;
-    xdata->list.next=NULL;
-    xdata->list.prev=NULL;
+    init_list_element(&xdata->list, NULL);
     xdata->loop=NULL;
 
     memset(&xdata->name, '\0', BEVENT_NAME_LEN);
@@ -123,6 +127,8 @@ static void add_xdata_to_list(struct bevent_xdata_s *xdata)
 {
     struct beventloop_s *loop=xdata->loop;
 
+    logoutput("add_xdata_to_list");
+
     if ( ! loop) {
 
 	loop=get_mainloop();
@@ -130,27 +136,23 @@ static void add_xdata_to_list(struct bevent_xdata_s *xdata)
 
     }
 
+    init_list_element(&xdata->list, NULL);
     /* add at tail */
-
-    xdata->list.prev=NULL;
-    xdata->list.next=NULL;
-    add_list_element_last(&loop->xdata_list.head, &loop->xdata_list.tail, &xdata->list);
+    add_list_element_last(&loop->xdata_list.header, &xdata->list);
 
 }
 
 static void remove_xdata_from_list(struct bevent_xdata_s *xdata)
 {
     struct beventloop_s *loop=xdata->loop;
-
-    if (loop) remove_list_element(&loop->xdata_list.head, &loop->xdata_list.tail, &xdata->list);
-    xdata->list.prev=NULL;
-    xdata->list.next=NULL;
-
+    if (loop) remove_list_element(&xdata->list);
 }
 
 struct bevent_xdata_s *add_to_beventloop(int fd, uint32_t events, bevent_cb callback, void *data, struct bevent_xdata_s *xdata, struct beventloop_s *loop)
 {
     struct epoll_event e_event;
+
+    logoutput("add_to_beventloop");
 
     if ( ! loop) loop=get_mainloop();
 
@@ -162,8 +164,8 @@ struct bevent_xdata_s *add_to_beventloop(int fd, uint32_t events, bevent_cb call
 
 	if (xdata) {
 
-	    init_xdata(xdata);
 	    xdata->status|=BEVENT_OPTION_ALLOCATED;
+	    init_xdata(xdata);
 
 	} else {
 
@@ -173,26 +175,21 @@ struct bevent_xdata_s *add_to_beventloop(int fd, uint32_t events, bevent_cb call
 
     }
 
-    xdata->fd=fd;
-    xdata->data=data;
-    xdata->callback=callback;
-    xdata->list.next=NULL;
-    xdata->list.prev=NULL;
-    xdata->loop=loop;
-
     e_event.events=events;
     e_event.data.ptr=(void *) xdata;
 
     if (epoll_ctl(loop->fd, EPOLL_CTL_ADD, fd, &e_event)==-1) {
 
-        if (xdata->status & BEVENT_OPTION_ALLOCATED) {
-
-	    free(xdata);
-    	    xdata=NULL;
-
-	}
-
+        if (xdata->status & BEVENT_OPTION_ALLOCATED) free(xdata);
+	xdata=NULL;
 	goto unlock;
+
+    } else {
+
+	xdata->fd=fd;
+	xdata->loop=loop;
+	xdata->callback=callback;
+	xdata->data=data;
 
     }
 
@@ -208,9 +205,11 @@ struct bevent_xdata_s *add_to_beventloop(int fd, uint32_t events, bevent_cb call
 
 int remove_xdata_from_beventloop(struct bevent_xdata_s *xdata)
 {
-    struct beventloop_s *loop=xdata->loop;
+    struct beventloop_s *loop=NULL;
 
-    if (! loop) return;;
+    if (xdata==NULL) return -1;
+    loop=xdata->loop;
+    if (! loop) return -1;
 
     lock_beventloop(loop);
 
@@ -238,12 +237,12 @@ struct bevent_xdata_s *get_next_xdata(struct beventloop_s *loop, struct bevent_x
 
     if (xdata) {
 
-	list=xdata->list.next;
+	list=xdata->list.n;
 
     } else {
 
 	if ( ! loop) loop=get_mainloop();
-	list=loop->xdata_list.head;
+	list=loop->xdata_list.header.head;
 
     }
 

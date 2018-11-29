@@ -16,8 +16,8 @@
   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
-#ifndef FUSE_FUSE_SPECIAL_H
-#define FUSE_FUSE_SPECIAL_H
+#ifndef SB_COMMON_UTILS_FUSE_SPECIAL_H
+#define SB_COMMON_UTILS_FUSE_SPECIAL_H
 
 void init_special_fs();
 void free_special_fs();

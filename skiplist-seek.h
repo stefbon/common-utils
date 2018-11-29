@@ -17,9 +17,8 @@
 
 */
 
-#ifndef _SL_SEEK_H
-#define _SL_SEEK_H
-
+#ifndef SB_COMMON_UTILS_SL_SEEK_H
+#define SB_COMMON_UTILS_SL_SEEK_H
 
 /* find data next to lookupdata */
 

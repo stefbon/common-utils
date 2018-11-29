@@ -17,8 +17,8 @@
 
 */
 
-#ifndef FUSE_FS_VIRTUAL_H
-#define FUSE_FS_VIRTUAL_H
+#ifndef SB_COMMON_UTILS_FS_VIRTUAL_H
+#define SB_COMMON_UTILS_FS_VIRTUAL_H
 
 void set_virtual_fs(struct fuse_fs_s *fs);
 void use_virtual_fs(struct service_context_s *context, struct inode_s *inode);

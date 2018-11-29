@@ -17,14 +17,14 @@
 
 */
 
-#ifndef COMMON_BEVENTLOOP_TIMER_H
-#define COMMON_BEVENTLOOP_TIMER_H
+#ifndef SB_COMMON_UTILS_BEVENTLOOP_TIMER_H
+#define SB_COMMON_UTILS_BEVENTLOOP_TIMER_H
 
 /* Prototypes */
 
 struct timerentry_s *get_containing_timerentry(struct list_element_s *list);
 void remove_timerentry(struct timerentry_s *entry);
-struct timerentry_s *create_timerentry(struct timespec *expire, void (*cb) (void *data), void *data, struct beventloop_s *loop);
+struct timerentry_s *create_timerentry(struct timespec *expire, void (*cb) (struct timerid_s *id, struct timespec *t), struct timerid_s *id, struct beventloop_s *loop);
 int enable_beventloop_timer(struct beventloop_s *loop, unsigned int *error);
 
 #endif

@@ -41,11 +41,13 @@
 #define ENOATTR ENODATA        /* No such attribute */
 #endif
 
+#define LOGGING
 #include "logging.h"
 #include "pathinfo.h"
+#include "utils.h"
+
 #include "entry-management.h"
 #include "directory-management.h"
-
 #include "fuse-interface.h"
 #include "fuse-fs.h"
 #include "workspaces.h"
@@ -77,11 +79,6 @@ int fs_unlock_datalink(struct inode_s *inode)
 int fs_get_inode_link(struct inode_s *inode, struct inode_link_s *link)
 {
     return (* inode->fs->get_inode_link)(inode, link);
-}
-
-unsigned char get_fs_count(struct inode_s *inode)
-{
-    return (* inode->fs->get_count)();
 }
 
 void fuse_fs_forget(struct fuse_request_s *request)
@@ -148,7 +145,7 @@ void fuse_fs_getattr(struct fuse_request_s *request)
     struct fuse_getattr_in *getattr_in=(struct fuse_getattr_in *) request->buffer;
     struct service_context_s *context=get_service_context(request->interface);
 
-    logoutput("fuse_fs_getattr");
+    logoutput("fuse_fs_getattr: ino %li", request->ino);
 
     if (request->ino==FUSE_ROOT_ID) {
 	struct workspace_mount_s *workspace=context->workspace;
@@ -157,9 +154,13 @@ void fuse_fs_getattr(struct fuse_request_s *request)
 	if ((getattr_in->getattr_flags & FUSE_GETATTR_FH) && getattr_in->fh>0) {
 	    struct fuse_openfile_s *openfile= (struct fuse_openfile_s *) getattr_in->fh;
 
+	    // logoutput("fuse_fs_getattr: fgetattr");
+
 	    (* inode->fs->type.nondir.fgetattr) (openfile, request);
 
 	} else {
+
+	    // logoutput("fuse_fs_getattr: getattr");
 
 	    (* inode->fs->getattr)(context, request, inode);
 
@@ -173,9 +174,13 @@ void fuse_fs_getattr(struct fuse_request_s *request)
 	    if ((getattr_in->getattr_flags & FUSE_GETATTR_FH) && getattr_in->fh>0) {
 		struct fuse_openfile_s *openfile=(struct fuse_openfile_s *) getattr_in->fh;
 
+		// logoutput("fuse_fs_getattr: fgetattr");
+
 		(* inode->fs->type.nondir.fgetattr) (openfile, request);
 
 	    } else {
+
+		// logoutput("fuse_fs_getattr: getattr");
 
 		(* inode->fs->getattr)(context, request, inode);
 
@@ -688,8 +693,8 @@ void _fuse_fs_opendir(struct service_context_s *context, struct inode_s *inode, 
 	opendir->inode=inode;
 	opendir->entry=NULL;
 	opendir->mode=0;
-	opendir->count=0;
-	opendir->created=0;
+	opendir->count_created=0;
+	opendir->count_found=0;
 	opendir->error=0;
 	opendir->readdir=inode->fs->type.dir.readdir;
 	opendir->readdirplus=inode->fs->type.dir.readdirplus;
@@ -697,7 +702,8 @@ void _fuse_fs_opendir(struct service_context_s *context, struct inode_s *inode, 
 	opendir->fsyncdir=inode->fs->type.dir.fsyncdir;
 	opendir->data=NULL;
 
-	logoutput("_fuse_fs_opendir: fs defined %s", (inode->fs) ? "yes" : "no");
+	//logoutput_info("_fuse_fs_opendir: fs defined %s", (inode->fs) ? "yes" : "no");
+	//if (inode->fs) logoutput_info("_fuse_fs_opendir: opendir defined %s", (inode->fs->type.dir.opendir) ? "yes" : "no");
 
 	(* inode->fs->type.dir.opendir)(opendir, request, open_in->flags);
 
@@ -1071,6 +1077,9 @@ void fuse_fs_setxattr(struct fuse_request_s *request)
     struct service_context_s *context=get_service_context(request->interface);
     uint64_t ino=request->ino;
 
+    reply_VFS_error(request, ENODATA);
+    return;
+
     if (ino==FUSE_ROOT_ID) {
 	struct workspace_mount_s *workspace=context->workspace;
 	struct inode_s *inode=&workspace->rootinode;
@@ -1105,13 +1114,16 @@ void fuse_fs_getxattr(struct fuse_request_s *request)
     struct service_context_s *context=get_service_context(request->interface);
     uint64_t ino=request->ino;
 
-    logoutput("fuse_fs_getxattr: ino %li", ino);
+    reply_VFS_error(request, ENODATA);
+    return;
 
     if (ino==FUSE_ROOT_ID) {
 	struct workspace_mount_s *workspace=context->workspace;
 	struct inode_s *inode=&workspace->rootinode;
 	struct fuse_getxattr_in *getxattr_in=(struct fuse_getxattr_in *) request->buffer;
 	char *name=(char *) ((char *) getxattr_in + sizeof(struct fuse_getxattr_in));
+
+	logoutput("fuse_fs_getxattr: root ino %li name %s", ino, name);
 
 	(* inode->fs->getxattr)(context, request, inode, name, getxattr_in->size);
 
@@ -1121,6 +1133,9 @@ void fuse_fs_getxattr(struct fuse_request_s *request)
 	if (inode) {
 	    struct fuse_getxattr_in *getxattr_in=(struct fuse_getxattr_in *) request->buffer;
 	    char *name=(char *) ((char *) getxattr_in + sizeof(struct fuse_getxattr_in));
+	    struct entry_s *entry=inode->alias;
+
+	    logoutput("fuse_fs_getxattr: ino %li entry %.*s name %s", ino, entry->name.len, entry->name.name, name);
 
 	    (* inode->fs->getxattr)(context, request, inode, name, getxattr_in->size);
 
@@ -1138,6 +1153,9 @@ void fuse_fs_listxattr(struct fuse_request_s *request)
 {
     struct service_context_s *context=get_service_context(request->interface);
     uint64_t ino=request->ino;
+
+    reply_VFS_error(request, ENODATA);
+    return;
 
     if (ino==FUSE_ROOT_ID) {
 	struct workspace_mount_s *workspace=context->workspace;

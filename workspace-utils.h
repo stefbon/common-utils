@@ -17,8 +17,8 @@
 
 */
 
-#ifndef FS_WORKSPACE_UTILS_H
-#define FS_WORKSPACE_UTILS_H
+#ifndef SB_COMMON_UTILS_WORKSPACE_UTILS_H
+#define SB_COMMON_UTILS_WORKSPACE_UTILS_H
 
 char *get_path_from_template(char *template, struct fuse_user_s *user, char *buff, size_t len0);
 void read_workspace_files(char *path);

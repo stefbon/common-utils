@@ -17,8 +17,8 @@
 
 */
 
-#ifndef MOUNTINFO_FSTAB_H
-#define MOUNTINFO_FSTAB_H
+#ifndef SB_COMMON_UTILS_MOUNTINFO_FSTAB_H
+#define SB_COMMON_UTILS_MOUNTINFO_FSTAB_H
 
 void read_fstab();
 unsigned char match_entry_in_fstab(char *mountpoint, char *fs, char *source);

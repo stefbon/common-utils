@@ -33,15 +33,16 @@
 
 #include <arpa/inet.h>
 
+#include "udt-interface.h"
+
 #ifdef HAVE_LIBUDT
 
 #include <udt/udt.h>
-#include <udt-interface.h>
 
-int UDTaccept(struct fs_connection_s *conn, struct sockaddr *addr, int *len)
+int UDTaccept(struct fs_connection_s *conn, struct sockaddr *addr, unsigned int *len)
 {
     UDTSOCKET s=(UDTSOCKET) conn->fd;
-    return (int) UDT::accept(s, addr, len);
+    return (int) UDT::accept(s, addr, (int) len);
 }
 
 int UDTbind(struct fs_connection_s *conn, struct sockaddr *addr, int *len, int sock)
@@ -62,22 +63,22 @@ int UDTconnect(struct fs_connection_s *conn, struct sockaddr *addr, int *len)
     return UDT::connect(s, addr, len);
 }
 
-int UDTgetpeername(struct fs_connection_s *conn, struct sockaddr *addr, int *len)
+int UDTgetpeername(struct fs_connection_s *conn, struct sockaddr *addr, unsigned int *len)
 {
     UDTSOCKET s=(UDTSOCKET) conn->fd;
     return UDT::getpeername(s, addr, len);
 }
 
-int UDTgetsockname(struct fs_connection_s *conn, struct sockaddr *addr, int *len)
+int UDTgetsockname(struct fs_connection_s *conn, struct sockaddr *addr, unsigned int *len)
 {
     UDTSOCKET s=(UDTSOCKET) conn->fd;
     return UDT::getsockname(s, addr, len);
 }
 
-int UDTgetsockopt(struct fs_connection_s *conn, int level, char *n, char *v, int *l)
+int UDTgetsockopt(struct fs_connection_s *conn, int level, int n, char *v, unsigned int *l)
 {
     UDTSOCKET s=(UDTSOCKET) conn->fd;
-    return UDT::getsockopt(s, level, (SOCKOPT) n, v, l);
+    return UDT::getsockopt(s, level, n, v, (int *)l);
 }
 
 int UDTlisten(struct fs_connection_s *conn, int blog)
@@ -98,7 +99,7 @@ int UDTsend(struct fs_connection_s *conn, char *buffer, unsigned int size, unsig
     return UDT::send(s, buffer, size, flags);
 }
 
-int UDTsetsockopt(struct fs_connection_s *conn, int level, char *n, char v, int l)
+int UDTsetsockopt(struct fs_connection_s *conn, int level, int n, char v, int l)
 {
     UDTSOCKET s=(UDTSOCKET) conn->fd;
     return UDT::getsockopt(s, level, (SOCKOPT) n, v, l);
@@ -121,7 +122,7 @@ int UDTcleanup()
 
 #else
 
-int UDTaccept(struct fs_connection_s *conn, struct sockaddr *addr, int *len)
+int UDTaccept(struct fs_connection_s *conn, struct sockaddr *addr, unsigned int *len)
 {
     return -1;
 }
@@ -141,17 +142,17 @@ int UDTconnect(struct fs_connection_s *conn, struct sockaddr *addr, int *len)
     return -1;
 }
 
-int UDTgetpeername(struct fs_connection_s *conn, struct sockaddr *addr, int *len)
+int UDTgetpeername(struct fs_connection_s *conn, struct sockaddr *addr, unsigned int *len)
 {
     return -1;
 }
 
-int UDTgetsockname(struct fs_connection_s *conn, struct sockaddr *addr, int *len)
+int UDTgetsockname(struct fs_connection_s *conn, struct sockaddr *addr, unsigned int *len)
 {
     return -1;
 }
 
-int UDTgetsockopt(struct fs_connection_s *conn, int level, SOCKOPT n, char *v, int *l)
+int UDTgetsockopt(struct fs_connection_s *conn, int level, int n, char *v, int *l)
 {
     return -1;
 }
@@ -171,7 +172,7 @@ int UDTsend(struct fs_connection_s *conn, char *buffer, unsigned int size, unsig
     return -1;
 }
 
-int UDTsetsockopt(struct fs_connection_s *conn, int level, SOCKOPT n, char v, int l)
+int UDTsetsockopt(struct fs_connection_s *conn, int level, int n, char *v, int l)
 {
     return -1;
 }
@@ -194,20 +195,19 @@ int UDTcleanup()
 #endif
 
 static struct socket_ops_s udt_sops = {
-{
     .type				=	SOCKET_OPS_TYPE_UDT,
     .accept				=	UDTaccept,
     .bind				=	UDTbind,
     .close				=	UDTclose,
     .connect				=	UDTconnect,
     .getpeername			=	UDTgetpeername,
-    .gethostname			=	UDTgethostname,
+    .getsockname			=	UDTgetsockname,
     .listen				=	UDTlisten,
     .recv				=	UDTrecv,
     .send				=	UDTsend,
     .setsockopt				=	UDTsetsockopt,
     .socket				=	UDTsocket,
-    .startup				=	UDTstartup,
+    .start				=	UDTstartup,
     .finish				=	UDTcleanup,
 };
 

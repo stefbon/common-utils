@@ -100,6 +100,8 @@ int compare_mount_entries(struct mountentry_s *a, struct mountentry_s *b)
 {
     int diff=0;
 
+    logoutput("compare_mount_entries: compare %s:%s:%s with %s:%s:%s", a->source, a->mountpoint, a->fs, b->source, b->mountpoint, b->fs);
+
     diff=g_strcmp0(a->mountpoint, b->mountpoint);
 
     if (diff==0) {

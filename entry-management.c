@@ -39,16 +39,19 @@
 #define ENOATTR ENODATA        /* No such attribute */
 #endif
 
+#include "utils.h"
 #include "entry-management.h"
 #include "workerthreads.h"
 #include "simple-locking.h"
+#include "fuse-interface.h"
+#include "directory-management.h"
+#include "entry-utils.h"
 
 #ifndef SIZE_INODE_HASHTABLE
 #define SIZE_INODE_HASHTABLE				10240
 #endif
 
 #include "logging.h"
-extern unsigned char get_fs_count(struct inode_s *inode);
 
 static struct inode_s **inode_hash_table=NULL;
 static pthread_mutex_t inode_table_mutex=PTHREAD_MUTEX_INITIALIZER;
@@ -141,7 +144,7 @@ void add_inode_hashtable(struct inode_s *inode, void (*cb) (void *data), void *d
     pthread_mutex_lock(&inode_table_mutex);
 
     inoctr++;
-    inode->ino=inoctr;
+    inode->st.st_ino=inoctr;
 
     hash = inoctr % SIZE_INODE_HASHTABLE;
 
@@ -193,7 +196,8 @@ struct entry_s *create_entry(struct entry_s *parent, struct name_s *xname)
 	init_entry(entry);
 
 	entry->name.name = name;
-	memcpy(name, xname->name, xname->len + 1);
+	memcpy(name, xname->name, xname->len);
+	name[xname->len]='\0'; /* terminating zero */
 
 	entry->name.len=xname->len;
 	entry->name.index=xname->index;
@@ -258,66 +262,50 @@ void destroy_entry(struct entry_s *entry)
 
 }
 
-static int get_inode_link_dummy(struct inode_s *i, struct inode_link_s *link)
-{
-    link->type=0;
-    return 0;
-}
-
 void init_inode(struct inode_s *inode)
 {
+    struct stat *st=&inode->st;
 
-    memset(inode, 0, sizeof(struct inode_s));
+    memset(inode, 0, sizeof(struct inode_s) + inode->cache_size);
 
     inode->flags=0;
-    inode->nlookup=0;
-    inode->ino=0;
     inode->id_next=NULL;
     inode->id_prev=NULL;
 
     inode->alias=NULL;
+    inode->nlookup=0;
 
-    inode->mode=0;
-    inode->nlink=0;
-    inode->uid=(uid_t) -1;
-    inode->gid=(gid_t) -1;
-    inode->size=0;
+    st->st_ino=0;
+    st->st_mode=0;
+    st->st_nlink=0;
+    st->st_uid=(uid_t) -1;
+    st->st_gid=(gid_t) -1;
+    st->st_size=0;
+    /* not used */
+    st->st_rdev=0;
+    st->st_dev=0;
+    st->st_blksize=0;
+    st->st_blocks=0;
 
-    inode->mtim.tv_sec=0;
-    inode->mtim.tv_nsec=0;
-    inode->ctim.tv_sec=0;
-    inode->ctim.tv_nsec=0;
-    inode->atim.tv_sec=0;
-    inode->atim.tv_nsec=0;
+    st->st_mtim.tv_sec=0;
+    st->st_mtim.tv_nsec=0;
+    st->st_ctim.tv_sec=0;
+    st->st_ctim.tv_nsec=0;
+    st->st_atim.tv_sec=0;
+    st->st_atim.tv_nsec=0;
+
+    /* synctime */
     inode->stim.tv_sec=0;
     inode->stim.tv_nsec=0;
 
-    inode->get_inode_link=get_inode_link_dummy;
+    inode->link.type=0;
+    inode->link.link.ptr=NULL;
 
 }
 
 void get_inode_stat(struct inode_s *inode, struct stat *st)
 {
-
-    st->st_mode=inode->mode;
-    st->st_nlink=inode->nlink;
-
-    st->st_uid=inode->uid;
-    st->st_gid=inode->gid;
-
-    st->st_size=inode->size;
-
-    st->st_mtim.tv_sec=inode->mtim.tv_sec;
-    st->st_mtim.tv_nsec=inode->mtim.tv_nsec;
-
-    st->st_ctim.tv_sec=inode->ctim.tv_sec;
-    st->st_ctim.tv_nsec=inode->ctim.tv_nsec;
-
-    st->st_atim.tv_sec=inode->atim.tv_sec;
-    st->st_atim.tv_nsec=inode->atim.tv_nsec;
-    st->st_rdev=0;
-    st->st_dev=0;
-
+    memcpy(st, &inode->st, sizeof(struct stat));
 }
 
 void fill_inode_stat(struct inode_s *inode, struct stat *st)
@@ -325,29 +313,34 @@ void fill_inode_stat(struct inode_s *inode, struct stat *st)
     //inode->mode=st->st_mode;
     //inode->nlink=st->st_nlink;
 
-    inode->uid=st->st_uid;
-    inode->gid=st->st_gid;
+    inode->st.st_uid=st->st_uid;
+    inode->st.st_gid=st->st_gid;
 
     //inode->size=st->st_size;
 
-    inode->mtim.tv_sec=st->st_mtim.tv_sec;
-    inode->mtim.tv_nsec=st->st_mtim.tv_nsec;
+    inode->st.st_mtim.tv_sec=st->st_mtim.tv_sec;
+    inode->st.st_mtim.tv_nsec=st->st_mtim.tv_nsec;
 
-    inode->ctim.tv_sec=st->st_ctim.tv_sec;
-    inode->ctim.tv_nsec=st->st_ctim.tv_nsec;
+    inode->st.st_ctim.tv_sec=st->st_ctim.tv_sec;
+    inode->st.st_ctim.tv_nsec=st->st_ctim.tv_nsec;
 
-    inode->atim.tv_sec=st->st_atim.tv_sec;
-    inode->atim.tv_nsec=st->st_atim.tv_nsec;
+    inode->st.st_atim.tv_sec=st->st_atim.tv_sec;
+    inode->st.st_atim.tv_nsec=st->st_atim.tv_nsec;
 
 }
 
-struct inode_s *create_inode()
+struct inode_s *create_inode(unsigned int cache_size)
 {
     struct inode_s *inode=NULL;
 
-    inode = malloc(sizeof(struct inode_s));
+    inode = malloc(sizeof(struct inode_s) + cache_size);
 
-    if (inode) init_inode(inode);
+    if (inode) {
+
+	inode->cache_size=cache_size;
+	init_inode(inode);
+
+    }
 
     return inode;
 
@@ -358,10 +351,49 @@ void free_inode(struct inode_s *inode)
     free(inode);
 }
 
+struct inode_s *realloc_inode(struct inode_s *inode, unsigned int new)
+{
+    size_t hash=inode->st.st_ino % SIZE_INODE_HASHTABLE;
+    struct inode_s *keep=inode;
+    struct inode_s *next=inode->id_next;
+    struct inode_s *prev=inode->id_prev;
+
+    inode=realloc(inode, sizeof(struct inode_s) + new); /* assume always good */
+
+    if (inode != keep) {
+
+	if (inode==NULL) return NULL;
+	inode->cache_size=new;
+
+	/* repair */
+
+	inode->id_next=next;
+	if (next) next->id_prev=inode;
+	inode->id_prev=prev;
+	if (prev) {
+
+	    prev->id_next=inode;
+
+	} else {
+
+	    /* no prev means it's the first */
+
+	    inode_hash_table[hash]=inode;
+
+	}
+
+    }
+
+    return inode;
+
+}
+
 struct inode_s *find_inode(uint64_t ino)
 {
     size_t hash=ino % SIZE_INODE_HASHTABLE;
     struct inode_s *inode=NULL;
+
+    // logoutput("find_inode: ino %li", (long) ino);
 
     pthread_mutex_lock(&inode_table_mutex);
 
@@ -369,12 +401,14 @@ struct inode_s *find_inode(uint64_t ino)
 
     while(inode) {
 
-	if (inode->ino==ino) break;
+	if (inode->st.st_ino==ino) break;
 	inode=inode->id_next;
 
     }
 
     pthread_mutex_unlock(&inode_table_mutex);
+
+    // logoutput("find_inode: ino %li %s", (long) ino, (inode) ? "found" : "notfound");
 
     return inode;
 
@@ -384,6 +418,8 @@ static void remove_inodes_thread(void *ptr)
 {
     struct context_interface_s *interface=(struct context_interface_s *) ptr;
     struct inode_s *inode=NULL;
+
+    logoutput_info("remove_inodes_thread");
 
     pthread_mutex_lock(&inode_tobedeleted_mutex);
 
@@ -406,30 +442,30 @@ static void remove_inodes_thread(void *ptr)
 	    struct entry_s *entry=inode->alias;
 	    struct entry_s *parent=(entry) ? entry->parent : NULL;
 
-	    logoutput_info("remove_inodes_thread: remove %lli", inode->ino);
+	    logoutput_info("remove_inodes_thread: remove %lli", inode->st.st_ino);
 
 	    if (inode->flags & FORGET_INODE_FLAG_NOTIFY_VFS) {
 
-		if (entry) notify_VFS_delete(interface->ptr, parent->inode->ino, inode->ino, entry->name.name, entry->name.len);
+		if (entry) notify_VFS_delete(interface->ptr, parent->inode->st.st_ino, inode->st.st_ino, entry->name.name, entry->name.len);
 
 	    }
 
-	    logoutput_info("remove_inodes_thread: A");
+	    // logoutput_info("remove_inodes_thread: A");
 
 	    if (entry)  {
 
 		if (parent) {
 		    struct simple_lock_s wlock;
 
-		    logoutput_info("remove_inodes_thread: B");
+		    // logoutput_info("remove_inodes_thread: B");
 
 		    if (wlock_directory(parent->inode, &wlock)==0) {
 			//struct directory_s *directory=get_directory(parent->inode);
 			unsigned int error=0;
 
-			logoutput_info("remove_inodes_thread: C");
+			// logoutput_info("remove_inodes_thread: C");
 			remove_entry(entry, &error); /* remove from skiplist (=directory) */
-			logoutput_info("remove_inodes_thread: D");
+			// logoutput_info("remove_inodes_thread: D");
 			unlock_directory(parent->inode, &wlock);
 
 		    }
@@ -480,7 +516,7 @@ struct inode_s *forget_inode(struct context_interface_s *interface, uint64_t ino
 
     while(inode) {
 
-	if (inode->ino==ino) {
+	if (inode->st.st_ino==ino) {
 	    struct inode_s *prev=NULL;
 	    struct inode_s *next=NULL;
 
@@ -550,7 +586,7 @@ struct inode_s *forget_inode(struct context_interface_s *interface, uint64_t ino
 
 void remove_inode(struct context_interface_s *interface, struct inode_s *inode)
 {
-    size_t hash=inode->ino % SIZE_INODE_HASHTABLE;
+    size_t hash=inode->st.st_ino % SIZE_INODE_HASHTABLE;
     struct inode_s *prev=NULL;
     struct inode_s *next=NULL;
 
@@ -599,20 +635,10 @@ void remove_inode(struct context_interface_s *interface, struct inode_s *inode)
 
 }
 
-void set_inode_link_cb(struct inode_s *inode, int (* get_inode_link_cb)(struct inode_s *i, struct inode_link_s *link))
-{
-    inode->get_inode_link=get_inode_link_cb;
-}
-
-void reset_inode_link_cb(struct inode_s *inode)
-{
-    inode->get_inode_link=get_inode_link_dummy;
-}
-
 void log_inode_information(struct inode_s *inode, uint64_t what)
 {
-    if (what & INODE_INFORMATION_OWNER) logoutput("log_inode_information: owner :%i", inode->uid);
-    if (what & INODE_INFORMATION_GROUP) logoutput("log_inode_information: owner :%i", inode->gid);
+    if (what & INODE_INFORMATION_OWNER) logoutput("log_inode_information: owner :%i", inode->st.st_uid);
+    if (what & INODE_INFORMATION_GROUP) logoutput("log_inode_information: owner :%i", inode->st.st_gid);
     if (what & INODE_INFORMATION_NAME) {
 	struct entry_s *entry=inode->alias;
 
@@ -628,34 +654,12 @@ void log_inode_information(struct inode_s *inode, uint64_t what)
 
     }
     if (what & INODE_INFORMATION_NLOOKUP) logoutput("log_inode_information: nlookup :%li", inode->nlookup);
-    if (what & INODE_INFORMATION_MODE) logoutput("log_inode_information: mode :%i", inode->mode);
-    if (what & INODE_INFORMATION_NLINK) logoutput("log_inode_information: nlink :%i", inode->nlink);
-    if (what & INODE_INFORMATION_SIZE) logoutput("log_inode_information: size :%i", inode->size);
-    if (what & INODE_INFORMATION_MTIM) logoutput("log_inode_information: mtim %li.%li", inode->mtim.tv_sec, inode->mtim.tv_nsec);
-    if (what & INODE_INFORMATION_CTIM) logoutput("log_inode_information: ctim %li.%li", inode->ctim.tv_sec, inode->ctim.tv_nsec);
-    if (what & INODE_INFORMATION_ATIM) logoutput("log_inode_information: atim %li.%li", inode->atim.tv_sec, inode->atim.tv_nsec);
+    if (what & INODE_INFORMATION_MODE) logoutput("log_inode_information: mode :%i", inode->st.st_mode);
+    if (what & INODE_INFORMATION_NLINK) logoutput("log_inode_information: nlink :%i", inode->st.st_nlink);
+    if (what & INODE_INFORMATION_SIZE) logoutput("log_inode_information: size :%i", inode->st.st_size);
+    if (what & INODE_INFORMATION_MTIM) logoutput("log_inode_information: mtim %li.%li", inode->st.st_mtim.tv_sec, inode->st.st_mtim.tv_nsec);
+    if (what & INODE_INFORMATION_CTIM) logoutput("log_inode_information: ctim %li.%li", inode->st.st_ctim.tv_sec, inode->st.st_ctim.tv_nsec);
+    if (what & INODE_INFORMATION_ATIM) logoutput("log_inode_information: atim %li.%li", inode->st.st_atim.tv_sec, inode->st.st_atim.tv_nsec);
     if (what & INODE_INFORMATION_STIM) logoutput("log_inode_information: stim %li.%li", inode->stim.tv_sec, inode->stim.tv_nsec);
-
-    if (what & INODE_INFORMATION_INODE_LINK) {
-	struct inode_link_s link;
-
-	(* inode->get_inode_link)(inode, &link);
-	logoutput("log_inode_information: inode_link type %i", link.type);
-
-    }
-
-    if (what & INODE_INFORMATION_FS_COUNT) {
-
-	if (inode->fs) {
-
-	    logoutput("log_inode_information: fs count %i", get_fs_count(inode));
-
-	} else {
-
-	    logoutput("log_inode_information: no fs");
-
-	}
-
-    }
 
 }

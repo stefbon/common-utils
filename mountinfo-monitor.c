@@ -38,6 +38,8 @@
 
 #include <glib.h>
 
+#undef LOGGING
+
 #include "logging.h"
 #include "simple-list.h"
 #include "beventloop.h"
@@ -49,6 +51,8 @@
 
 #include "utils.h"
 
+#define MOUNT_MONITOR_FLAG_INIT			1
+
 struct mountinfo_monitor_s {
     int 					(*update) (unsigned long generation_id, struct mountentry_s *(*next) (void **index, unsigned long g, unsigned char type));
     unsigned char 				(*ignore) (char *source, char *fs, char *path);
@@ -59,21 +63,17 @@ struct mountinfo_monitor_s {
     char					*buffer;
     unsigned int				size;
     void 					*threadsqueue;
+    unsigned int				flags;
 };
 
 /* private structs for internal use only */
 
 struct mountinfo_s {
-    int 			mountid;
-    int 			parentid;
-    unsigned char 		added;
-    struct list_element_s	list;
-    struct mountentry_s 	*mountentry;
-};
-
-struct mount_head_s {
-    struct list_element_s	*head;
-    struct list_element_s	*tail;
+    int 					mountid;
+    int 					parentid;
+    unsigned char 				added;
+    struct list_element_s			list;
+    struct mountentry_s 			*mountentry;
 };
 
 /* struct when reading the mountinfo file:
@@ -82,16 +82,18 @@ struct mount_head_s {
 */
 
 struct mountinfo_list_s {
-    struct mount_head_s		mountinfo;
-    struct mount_head_s		mountentry;
+    struct list_header_s			mountinfo;
+    struct list_header_s			mountentry;
 };
+
+/* these procedures maintain the current mounts,
+    and run a specific cb for every mount added or removed */
 
 /* added, removed and keep mount entries */
 
-static struct mount_head_s removed_mounts;
-static struct mount_head_s current_mounts;
+static struct list_header_s removed_mounts;
+static struct list_header_s current_mounts;
 static struct mountinfo_monitor_s mount_monitor;
-
 static int process_mountinfo_event(int fd, void *data, uint32_t events);
 
 struct mountinfo_s *get_containing_mountinfo(struct list_element_s *list)
@@ -140,22 +142,19 @@ int open_mountmonitor(struct bevent_xdata_s *xdata, unsigned int *error)
 
     }
 
-    current_mounts.head=NULL;
-    current_mounts.tail=NULL;
-
-    removed_mounts.head=NULL;
-    removed_mounts.tail=NULL;
+    init_list_header(&current_mounts, SIMPLE_LIST_TYPE_EMPTY, NULL);
+    init_list_header(&removed_mounts, SIMPLE_LIST_TYPE_EMPTY, NULL);
 
     mount_monitor.update=dummy_update;
     mount_monitor.ignore=dummy_ignore;
     mount_monitor.xdata=xdata;
-
     pthread_mutex_init(&mount_monitor.mutex, NULL);
     mount_monitor.changed=0;
     mount_monitor.threadid=0;
     mount_monitor.buffer=NULL;
     mount_monitor.size=4096;
     mount_monitor.threadsqueue=NULL;
+    mount_monitor.flags=0;
 
     xdata->fd=open(MOUNTINFO_FILE, O_RDONLY);
 
@@ -167,8 +166,8 @@ int open_mountmonitor(struct bevent_xdata_s *xdata, unsigned int *error)
 
     }
 
+    logoutput("open_mountmonitor: fd %i", xdata->fd);
     xdata->callback=process_mountinfo_event;
-
     return 0;
 
     error:
@@ -231,7 +230,7 @@ struct mountentry_s *get_next_mountentry_added(void **pindex, unsigned long gene
     if (index) {
 
 	entry=(struct mountentry_s *) index;
-	entry=get_containing_mountentry(entry->list.next);
+	entry=get_containing_mountentry(get_next_element(&entry->list));
 
     } else {
 
@@ -244,7 +243,7 @@ struct mountentry_s *get_next_mountentry_added(void **pindex, unsigned long gene
     while (entry) {
 
 	if (entry->generation>=generation) break;
-	entry=get_containing_mountentry(entry->list.next);
+	entry=get_containing_mountentry(get_next_element(&entry->list));
 
     }
 
@@ -257,19 +256,18 @@ struct mountentry_s *get_next_mountentry_added(void **pindex, unsigned long gene
 
 static void add_mount_removed(struct mountentry_s *mountentry)
 {
-    add_list_element_last(&removed_mounts.head, &removed_mounts.tail, &mountentry->list);
+    add_list_element_last(&removed_mounts, &mountentry->list);
 }
 
 static void clear_removed_mounts()
 {
-    struct mountentry_s *entry=get_containing_mountentry(removed_mounts.head);
+    struct list_element_s *list=get_list_head(&removed_mounts, SIMPLE_LIST_FLAG_REMOVE);
 
-    while (entry) {
+    while (list) {
 
-	removed_mounts.head=entry->list.next;
-
+	struct mountentry_s *entry=get_containing_mountentry(list);
 	free_mountentry(entry);
-	entry=get_containing_mountentry(removed_mounts.head);
+	list=get_list_head(&removed_mounts, SIMPLE_LIST_FLAG_REMOVE);
 
     }
 
@@ -283,7 +281,7 @@ struct mountentry_s *get_next_mountentry_removed(void **pindex)
     if (index) {
 
 	entry=(struct mountentry_s *) index;
-	entry=get_containing_mountentry(entry->list.next);
+	entry=get_containing_mountentry(get_next_element(&entry->list));
 
     } else {
 
@@ -305,7 +303,7 @@ struct mountentry_s *get_next_mountentry_current(void **pindex)
     if (index) {
 
 	entry=(struct mountentry_s *) index;
-	entry=get_containing_mountentry(entry->list.next);
+	entry=get_containing_mountentry(get_next_element(&entry->list));
 
     } else {
 
@@ -358,6 +356,8 @@ static void read_mountinfo_values(char *buffer, unsigned int size, struct mounti
     struct mountinfo_s *mountinfo=NULL;
     int left=size;
     int error=0;
+
+    logoutput("read_mountinfo_values");
 
     pos=buffer;
 
@@ -498,10 +498,9 @@ static void read_mountinfo_values(char *buffer, unsigned int size, struct mounti
     mountinfo->mountid=mountid;
     mountinfo->parentid=parentid;
     mountinfo->added=0;
-    mountinfo->list.next=NULL;
-    mountinfo->list.prev=NULL;
+    init_list_element(&mountinfo->list, NULL);
 
-    add_list_element_last(&list->mountinfo.head, &list->mountinfo.tail, &mountinfo->list);
+    add_list_element_last(&list->mountinfo, &mountinfo->list);
 
     mountentry->unique=0;
     mountentry->generation=0;
@@ -511,15 +510,13 @@ static void read_mountinfo_values(char *buffer, unsigned int size, struct mounti
     mountentry->fs=fs;
     mountentry->options=options;
     mountentry->source=source;
+    init_list_element(&mountentry->list, NULL);
 
     mountinfo->mountentry=mountentry;
     mountentry->index=(void *) mountinfo;
 
     mountentry->major=major;
     mountentry->minor=minor;
-
-    mountentry->list.next=NULL;
-    mountentry->list.prev=NULL;
     mountentry->data=NULL;
 
     if (strcmp(fs, "autofs")==0) {
@@ -553,9 +550,11 @@ static void read_mountinfo_values(char *buffer, unsigned int size, struct mounti
 
     	    if (diff>0) {
 
-        	if (prev->list.prev) {
+		struct list_element_s *p=get_prev_element(&prev->list);
 
-            	    prev=get_containing_mountentry(prev->list.prev);
+        	if (p) {
+
+            	    prev=get_containing_mountentry(p);
 
                 } else {
 
@@ -575,11 +574,11 @@ static void read_mountinfo_values(char *buffer, unsigned int size, struct mounti
 
         if ( diff>0 ) {
 
-	    add_list_element_first(&list->mountentry.head, &list->mountentry.tail, &mountentry->list);
+	    add_list_element_first(&list->mountentry, &mountentry->list);
 
         } else {
 
-	    add_list_element_after(&list->mountentry.head, &list->mountentry.tail, &prev->list, &mountentry->list);
+	    add_list_element_after(&list->mountentry, &prev->list, &mountentry->list);
 
         }
 
@@ -657,8 +656,6 @@ static int get_mountlist(struct mountinfo_list_s *list)
 
     }
 
-    logoutput("get_mountlist");
-
     if ( ! mount_monitor.buffer) {
 
 	mount_monitor.buffer=malloc(mount_monitor.size);
@@ -733,13 +730,12 @@ void handle_change_mounttable(unsigned char init)
     struct mountinfo_s *mountinfo=NULL;
     unsigned long generation=0;
     unsigned int error=0;
+    unsigned int count_added=0;
 
     logoutput("handle_change_mounttable");
 
-    new_list.mountinfo.head=NULL;
-    new_list.mountinfo.tail=NULL;
-    new_list.mountentry.head=NULL;
-    new_list.mountentry.tail=NULL;
+    init_list_header(&new_list.mountinfo, SIMPLE_LIST_TYPE_EMPTY, NULL);
+    init_list_header(&new_list.mountentry, SIMPLE_LIST_TYPE_EMPTY, NULL);
 
     lock_mountlist("write", &error);
 
@@ -748,21 +744,26 @@ void handle_change_mounttable(unsigned char init)
 
     /* get a new list and compare */
 
-    if ( get_mountlist(&new_list)==0 ) {
-	struct mountentry_s *entry=NULL;
-	struct mountentry_s *newentry=NULL;
+    if (get_mountlist(&new_list)==0) {
+	struct list_element_s *list_c=NULL;
+	struct list_element_s *list_n=NULL;
+	struct mountentry_s *entry_c=NULL;
+	struct mountentry_s *entry_n=NULL;
 	int diff=0;
 
-        entry=get_containing_mountentry(current_mounts.head);
-        newentry=get_containing_mountentry(new_list.mountentry.head);
+	list_c=get_list_head(&current_mounts, 0);
+	list_n=get_list_head(&new_list.mountentry, 0);
 
-        while (1) {
+        entry_c=get_containing_mountentry(list_c);
+        entry_n=get_containing_mountentry(list_n);
 
-            if (newentry) {
+        while (entry_c && entry_n) {
 
-		if (entry) {
+            if (entry_n) {
 
-            	    diff=compare_mount_entries(entry, newentry);
+		if (entry_c) {
+
+            	    diff=compare_mount_entries(entry_c, entry_n);
 
         	} else {
 
@@ -772,7 +773,7 @@ void handle_change_mounttable(unsigned char init)
 
             } else {
 
-		if (entry) {
+		if (entry_c) {
 
             	    diff=-1;
 
@@ -787,58 +788,55 @@ void handle_change_mounttable(unsigned char init)
 	    }
 
             if (diff==0) {
-		struct mountentry_s *next=get_containing_mountentry(newentry->list.next);
-		struct mountinfo_s *mountinfo=(struct mountinfo_s *) newentry->index;
+		struct list_element_s *next=get_next_element(list_n);
+		struct mountinfo_s *mountinfo=(struct mountinfo_s *) entry_n->index;
 
-		/* the same */
+		/* the same, step on both lists */
 
-		remove_list_element(&new_list.mountentry.head, &new_list.mountentry.tail, &newentry->list);
-		free_mountentry((void *) newentry);
+		free_mountentry((void *) entry_n);
 
-		mountinfo->mountentry=entry;
+		mountinfo->mountentry=entry_c;
 		mountinfo->added=0;
 
-		entry=get_containing_mountentry(entry->list.next);
-		newentry=next;
+		list_c=get_next_element(list_c);
+		list_n=next;
 
             } else if ( diff<0 ) {
-		struct mountentry_s *next=get_containing_mountentry(entry->list.next);
+		struct list_element_s *next=get_next_element(list_c);
 
-                /* current is smaller: removed */
+                /* current is smaller: move to removed list */
 
-		entry->index=NULL;
-		remove_list_element(&current_mounts.head, &current_mounts.tail, &entry->list);
-                add_list_element_last(&removed_mounts.head, &removed_mounts.tail, &entry->list);
+		entry_c->index=NULL;
+		remove_list_element(list_c);
+                add_list_element_last(&removed_mounts, list_c);
 
-                entry=next;
+                list_c=next;
 
             } else { /* diff>0 */
-		struct mountentry_s *next=get_containing_mountentry(newentry->list.next);
+		struct list_element_s *next=get_next_element(list_n);
 
                 /* new is "smaller" then current : added */
 
-		remove_list_element(&new_list.mountentry.head, &new_list.mountentry.tail, &newentry->list);
+		remove_list_element(list_n);
+		init_list_element(list_n, NULL);
 
-		newentry->list.next=NULL;
-		newentry->list.prev=NULL;
+		if (list_c) {
 
-		if (entry) {
-
-		    add_list_element_before(&current_mounts.head, &current_mounts.tail, &entry->list, &newentry->list);
+		    add_list_element_before(&current_mounts, list_c, list_n);
 
 		} else {
 
-		    add_list_element_last(&current_mounts.head, &current_mounts.tail, &newentry->list);
+		    add_list_element_last(&current_mounts, list_n);
 
 		}
 
-		newentry->unique=get_uniquectr();
-		newentry->generation=generation;
+		entry_n->unique=get_uniquectr();
+		entry_n->generation=generation;
 
-		mountinfo=(struct mountinfo_s *) newentry->index;
+		mountinfo=(struct mountinfo_s *) entry_n->index;
 		mountinfo->added=1;
 
-		newentry=next;
+		list_n=next;
 
             }
 
@@ -861,6 +859,7 @@ void handle_change_mounttable(unsigned char init)
 
 		logoutput("handle_change_mounttable: added %s", entry->mountpoint);
 		check_mounted_by_autofs(entry);
+		count_added++;
 
 	    }
 
@@ -868,7 +867,7 @@ void handle_change_mounttable(unsigned char init)
 
 	}
 
-	new_list.mountinfo.head=mountinfo->list.next;
+	new_list.mountinfo.head=get_next_element(&mountinfo->list);
 	free(mountinfo);
 
 	if (new_list.mountinfo.head) {
@@ -883,7 +882,9 @@ void handle_change_mounttable(unsigned char init)
 
     }
 
-    if (init==0) {
+    if (init==0 && (count_added>0 || removed_mounts.count>0)) {
+
+	logoutput("handle_change_mounttable: run the cb");
 
 	if ((*mount_monitor.update) (generation, get_next_mountentry)==1) {
 
@@ -897,9 +898,10 @@ void handle_change_mounttable(unsigned char init)
 
 }
 
-static void thread_process_mountinfo(void *data)
+static void thread_process_mountinfo(void *ptr)
 {
-    unsigned char init=(data) ? 0 : 1;
+
+    logoutput("thread_process_mountinfo");
 
     pthread_mutex_lock(&mount_monitor.mutex);
 
@@ -909,7 +911,7 @@ static void thread_process_mountinfo(void *data)
     mount_monitor.threadid=pthread_self();
     pthread_mutex_unlock(&mount_monitor.mutex);
 
-    handle_change_mounttable(init);
+    handle_change_mounttable(! (mount_monitor.flags & MOUNT_MONITOR_FLAG_INIT));
 
     pthread_mutex_lock(&mount_monitor.mutex);
     if (mount_monitor.changed==1) goto process;
@@ -923,32 +925,34 @@ static void thread_process_mountinfo(void *data)
 static int process_mountinfo_event(int fd, void *data, uint32_t events)
 {
 
-    if (fd>0) {
+    logoutput("process_mountinfo_event");
 
-	pthread_mutex_lock(&mount_monitor.mutex);
+    pthread_mutex_lock(&mount_monitor.mutex);
 
-	if (mount_monitor.threadid>0) {
+    if (mount_monitor.threadid>0) {
 
-	    /* there is already a thread processing */
-	    mount_monitor.changed=1;
+	/* there is already a thread processing */
+	mount_monitor.changed=1;
 
-	} else {
-	    unsigned int error=0;
+    } else if ((mount_monitor.flags & MOUNT_MONITOR_FLAG_INIT)==0) {
 
-	    /* get a thread to do the work */
-
-	    work_workerthread(mount_monitor.threadsqueue, 0, thread_process_mountinfo, &mount_monitor, &error);
-	    if (error>0) logoutput("process_mountinfo_event: error %i:%s starting thread", error, strerror(error));
-
-	}
-
-	pthread_mutex_unlock(&mount_monitor.mutex);
+	handle_change_mounttable(1);
+	mount_monitor.flags|=MOUNT_MONITOR_FLAG_INIT;
 
     } else {
+	unsigned int error=0;
 
-	thread_process_mountinfo(NULL);
+	/* get a thread to do the work */
+
+	logoutput("process_mountinfo_event: start thread");
+
+	work_workerthread(NULL, 0, thread_process_mountinfo, NULL, &error);
+	if (error>0) logoutput("process_mountinfo_event: error %i:%s starting thread", error, strerror(error));
+	logoutput("process_mountinfo_event: thread started");
 
     }
+
+    pthread_mutex_unlock(&mount_monitor.mutex);
 
     out:
 

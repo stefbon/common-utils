@@ -17,8 +17,8 @@
 
 */
 
-#ifndef MOUNTINFO_HASH_H
-#define MOUNTINFO_HASH_H
+#ifndef SB_COMMON_UTILS_MOUNTINFO_HASH_H
+#define SB_COMMON_UTILS_MOUNTINFO_HASH_H
 
 int init_mountinfo_hash();
 void free_mountinfo_hash();

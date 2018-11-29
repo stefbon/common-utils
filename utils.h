@@ -17,8 +17,8 @@
   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
-#ifndef GENERAL_UTILS_H
-#define GENERAL_UTILS_H
+#ifndef SB_COMMON_UTILS_UTILS_H
+#define SB_COMMON_UTILS_UTILS_H
 
 #define UTILS_CONVERT_SKIPSPACE 1
 #define UTILS_CONVERT_TOLOWER	2
@@ -57,7 +57,7 @@ pid_t getprocess_id(pid_t thread_id);
 
 int custom_fork();
 
+uint32_t safe_atoi(char *b);
+uint64_t safe_atoii(char *b);
+
 #endif
-
-
-

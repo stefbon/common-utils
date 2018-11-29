@@ -43,18 +43,18 @@
 #endif
 
 #include "pathinfo.h"
+#include "utils.h"
+#include "beventloop.h"
 #include "workerthreads.h"
 #include "entry-management.h"
 #include "directory-management.h"
 #include "entry-utils.h"
-#include "utils.h"
-
-#include "beventloop.h"
 #include "fuse-interface.h"
 #include "fuse-fs.h"
 #include "workspaces.h"
 #include "path-caching.h"
 
+#undef LOGGING
 #include "logging.h"
 
 extern const char *dotdotname;
@@ -119,6 +119,7 @@ int init_workspace_mount(struct workspace_mount_s *workspace, unsigned int *erro
     struct entry_s *rootentry=NULL;
     struct name_s xname={NULL, 0, 0};
     struct inode_s *rootinode=&workspace->rootinode;
+    struct stat *st=&rootinode->st;
 
     memset(workspace, 0, sizeof(struct workspace_mount_s));
 
@@ -138,21 +139,24 @@ int init_workspace_mount(struct workspace_mount_s *workspace, unsigned int *erro
     workspace->fscount=0;
 
     workspace->free=free_workspace_mount;
+    init_list_header(&workspace->contexes, SIMPLE_LIST_TYPE_EMPTY, NULL);
+    init_list_element(&workspace->list, NULL);
 
     init_inode(rootinode);
+    st->st_mode=S_IFDIR | S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
+    st->st_nlink=2;
+    st->st_uid=0;
+    st->st_gid=0;
+    st->st_size=_INODE_DIRECTORY_SIZE;
+    st->st_blksize=1024;
+    st->st_blocks=(unsigned int) (st->st_size / st->st_blksize) + ((st->st_size % st->st_blksize)==0) ? 1 : 0;
 
-    rootinode->mode=S_IFDIR | S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
-    rootinode->nlink=2;
-    rootinode->uid=0;
-    rootinode->gid=0;
+    get_current_time(&st->st_mtim);
+    st->st_ctim.tv_sec=st->st_mtim.tv_sec;
+    st->st_ctim.tv_nsec=st->st_mtim.tv_nsec;
+    st->st_ino=FUSE_ROOT_ID;
 
-    get_current_time(&rootinode->mtim);
-    rootinode->ctim.tv_sec=rootinode->mtim.tv_sec;
-    rootinode->ctim.tv_nsec=rootinode->mtim.tv_nsec;
-
-    rootinode->ino=FUSE_ROOT_ID;
     rootinode->nlookup=1;
-    rootinode->size=_INODE_DIRECTORY_SIZE;
     rootinode->fs=NULL;
 
     pthread_mutex_init(&workspace->mutex, NULL);
@@ -187,10 +191,13 @@ int mount_workspace_mount(struct service_context_s *context, char *source, char 
     if (init_fuse_interface(&context->interface)==0) {
 	struct context_address_s address;
 
-	address.type=_INTERFACE_FUSE_MOUNT;
-	address.target.fuse.source=source;
-	address.target.fuse.mountpoint=workspace->mountpoint.path;
-	address.target.fuse.name=name;
+	memset(&address, 0, sizeof(struct context_address_s));
+
+	address.network.type=_INTERFACE_ADDRESS_NONE;
+	address.service.type=_INTERFACE_SERVICE_FUSE;
+	address.service.target.fuse.source=source;
+	address.service.target.fuse.mountpoint=workspace->mountpoint.path;
+	address.service.target.fuse.name=name;
 
 	if (! (* context->interface.connect)(workspace->user->uid, &context->interface, &address, error)) {
 
@@ -213,23 +220,6 @@ int mount_workspace_mount(struct service_context_s *context, char *source, char 
 void umount_workspace_mount(struct service_context_s *context)
 {
     (* context->interface.free)(&context->interface);
-}
-
-unsigned char get_workspace_fs_count(struct workspace_mount_s *workspace)
-{
-    unsigned char count=0;
-    pthread_mutex_lock(&workspace->mutex);
-    count=workspace->fscount;
-    workspace->fscount++;
-    pthread_mutex_unlock(&workspace->mutex);
-    return count;
-}
-
-void set_workspace_fs_count(struct workspace_mount_s *workspace, unsigned char count)
-{
-    pthread_mutex_lock(&workspace->mutex);
-    workspace->fscount=count;
-    pthread_mutex_unlock(&workspace->mutex);
 }
 
 /*
@@ -256,7 +246,7 @@ int get_path_root(struct inode_s *inode, struct fuse_path_s *fpath)
 
     entry=entry->parent;
     inode=entry->inode;
-    if (inode->ino>FUSE_ROOT_ID) goto appendname;
+    if (inode->st.st_ino>FUSE_ROOT_ID) goto appendname;
 
     return pathlen;
 
@@ -278,10 +268,11 @@ void create_personal_workspace_mount(struct workspace_mount_s *w)
 
 	if (snprintf(path, len, "%s/Network", pw->pw_dir)>0) {
 
-	    /* path may not exist ... ignore any error */
+	    if (mkdir(path, S_IFDIR | S_IRUSR | S_IXUSR | S_IWUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)==-1) {
 
-	    mkdir(path, S_IFDIR | S_IRUSR | S_IXUSR | S_IWUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
-	    umount(path);
+		if (errno==EEXIST) umount(path);
+
+	    }
 
 	    mount(w->mountpoint.path, path, NULL, MS_BIND, NULL);
 

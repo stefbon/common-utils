@@ -45,12 +45,13 @@
 
 #include "logging.h"
 #include "pathinfo.h"
-#include "workerthreads.h"
-#include "entry-management.h"
 #include "utils.h"
-#include "workspace-interface.h"
-
 #include "beventloop.h"
+#include "beventloop-xdata.h"
+#include "workerthreads.h"
+
+#include "entry-management.h"
+#include "workspace-interface.h"
 #include "fuse-interface.h"
 
 #define FUSEPARAM_OPTION_MOUNTED				1
@@ -652,12 +653,12 @@ static void process_fusequeue(void *data)
 
 }
 
-static unsigned char *fuse_request_interrupted_default(struct fuse_request_s *request)
+static unsigned char fuse_request_interrupted_default(struct fuse_request_s *request)
 {
     return (request->flags & FUSEDATA_FLAG_INTERRUPTED);
 }
 
-static unsigned char *fuse_request_interrupted_nonfuse(struct fuse_request_s *request)
+static unsigned char fuse_request_interrupted_nonfuse(struct fuse_request_s *request)
 {
     return 0;
 }
@@ -667,6 +668,8 @@ static int read_fuse_event(int fd, void *ptr, uint32_t events)
     struct fuseparam_s *fuseparam=(struct fuseparam_s *) ptr;
     int lenread;
     unsigned int error=0;
+
+    logoutput("read_fuse_event");
 
     if ( events & (EPOLLERR | EPOLLHUP) ) {
 
@@ -1007,19 +1010,19 @@ static void *mount_fuse_interface(uid_t uid, struct context_interface_s *interfa
     char fusedevice[32];
     char mountoptions[256];
     unsigned int mountflags=0;
-    unsigned int len=(address->target.fuse.mountpoint) ? strlen(address->target.fuse.mountpoint) : 0;
-    unsigned int lenname=(address->target.fuse.name) ? strlen(address->target.fuse.name) : 0; /* prevent error when name not defined (see parameters check)*/
+    unsigned int len=(address->network.type==_INTERFACE_ADDRESS_NONE && address->service.type==_INTERFACE_SERVICE_FUSE) ? strlen(address->service.target.fuse.mountpoint) : 0;
+    unsigned int lenname=(address->network.type==_INTERFACE_ADDRESS_NONE && address->service.type==_INTERFACE_SERVICE_FUSE) ? strlen(address->service.target.fuse.name) : 0; /* prevent error when name not defined (see parameters check)*/
     unsigned int lentype=lenname + strlen("fuse.") + 1;
     char typestring[lentype];
     int fd=0;
 
-    if (!(address->type==_INTERFACE_FUSE_MOUNT)) {
+    if (!(address->network.type==_INTERFACE_ADDRESS_NONE) || !(address->service.type==_INTERFACE_SERVICE_FUSE)) {
 
 	*error=EINVAL;
 	logoutput("mount_fuse_interface: error, only fuse address");
 	goto error;
 
-    } else if (address->target.fuse.source==NULL || address->target.fuse.mountpoint==NULL || address->target.fuse.name==NULL) {
+    } else if (address->service.target.fuse.source==NULL || address->service.target.fuse.mountpoint==NULL || address->service.target.fuse.name==NULL) {
 
 	*error=EINVAL;
 	logoutput("mount_fuse_interface: error, incomplete fuse target");
@@ -1060,22 +1063,21 @@ static void *mount_fuse_interface(uid_t uid, struct context_interface_s *interfa
     /* construct the options to parse to mount command and session setup */
 
     snprintf(mountoptions, 256, "fd=%i,rootmode=%o,user_id=0,group_id=0,default_permissions,allow_other,max_read=%i", fuseparam->fd, 755 | S_IFDIR, 4096);
-    snprintf(typestring, lentype, "fuse.%s", address->target.fuse.name);
+    snprintf(typestring, lentype, "fuse.%s", address->service.target.fuse.name);
     errno=0;
 
     mountflags=MS_NODEV | MS_NOEXEC | MS_NOSUID | MS_NOATIME;
 
-    if (mount(address->target.fuse.source, address->target.fuse.mountpoint, typestring, mountflags, (const void *) mountoptions)==0) {
+    if (mount(address->service.target.fuse.source, address->service.target.fuse.mountpoint, typestring, mountflags, (const void *) mountoptions)==0) {
 
-	logoutput("mount_fuse_interface: mounted %s, type %s with options %s", address->target.fuse.mountpoint, typestring, mountoptions);
+	logoutput("mount_fuse_interface: (fd=%i) mounted %s, type %s with options %s", fuseparam->fd, address->service.target.fuse.mountpoint, typestring, mountoptions);
+
 	fuseparam->options |= FUSEPARAM_OPTION_MOUNTED;
-
-	logoutput("mount_fuse_interface: add %i to eventloop", fuseparam->fd);
 	fuseparam->xdata=(*interface->add_context_eventloop)(interface, fuseparam->fd, read_fuse_event, (void *) fuseparam, "FUSE", error);
 
     } else {
 
-	logoutput("mount_fuse_interface: error %i:%s mounting %s with options %s", errno, strerror(errno), address->target.fuse.mountpoint, mountoptions);
+	logoutput("mount_fuse_interface: error %i:%s mounting %s with options %s", errno, strerror(errno), address->service.target.fuse.mountpoint, mountoptions);
 	*error=errno;
 	goto error;
 

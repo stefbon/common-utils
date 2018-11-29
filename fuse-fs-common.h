@@ -17,8 +17,11 @@
 
 */
 
-#ifndef FUSE_FS_COMMON_H
-#define FUSE_FS_COMMON_H
+#ifndef SB_COMMON_UTILS_FUSE_FS_COMMON_H
+#define SB_COMMON_UTILS_FUSE_FS_COMMON_H
+
+#define _FS_CREATE_ENTRY_MAYEXIST				1
+#define _FS_CREATE_ENTRY_CACHE					2
 
 int check_access_path(uid_t uid, gid_t gid, struct pathinfo_s *target, unsigned int *error);
 struct entry_s *get_target_symlink(struct workspace_mount_s *mount, struct entry_s *parent, const char *path);
@@ -36,8 +39,8 @@ void _fs_common_virtual_readdirplus(struct fuse_opendir_s *opendir, struct fuse_
 void _fs_common_virtual_releasedir(struct fuse_opendir_s *opendir, struct fuse_request_s *request);
 void _fs_common_virtual_fsyncdir(struct fuse_opendir_s *opendir, struct fuse_request_s *request, unsigned char datasync);
 
-struct entry_s *_fs_common_create_entry(struct workspace_mount_s *workspace, struct entry_s *parent, struct name_s *xname, struct stat *st, unsigned char mayexist, unsigned int *error);
-struct entry_s *_fs_common_create_entry_unlocked(struct workspace_mount_s *workspace, struct directory_s *directory, struct name_s *xname, struct stat *st, unsigned char mayexist, unsigned int *error);
+struct entry_s *_fs_common_create_entry(struct workspace_mount_s *workspace, struct entry_s *parent, struct name_s *xname, struct stat *st, unsigned int size, unsigned int flags, unsigned int *error);
+struct entry_s *_fs_common_create_entry_unlocked(struct workspace_mount_s *workspace, struct directory_s *directory, struct name_s *xname, struct stat *st, unsigned int size, unsigned int flags, unsigned int *error);
 
 void _fs_common_statfs(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, uint64_t blocks, uint64_t bfree, uint64_t bavail, uint32_t bsize);
 

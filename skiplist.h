@@ -17,8 +17,8 @@
 
 */
 
-#ifndef _SKIPLIST_H
-#define _SKIPLIST_H
+#ifndef SB_COMMON_UTILS_SKIPLIST_H
+#define SB_COMMON_UTILS_SKIPLIST_H
 
 #define _SKIPLIST_PROB					4
 

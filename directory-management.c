@@ -40,6 +40,7 @@
 #endif
 
 #include "logging.h"
+#include "utils.h"
 
 #include "skiplist.h"
 #include "skiplist-find.h"
@@ -454,7 +455,7 @@ int init_directory(struct directory_s *directory, unsigned int *error)
 
 static struct directory_s *search_directory(struct inode_s *inode)
 {
-    unsigned int hashvalue = inode->ino % 2048;
+    unsigned int hashvalue = inode->st.st_ino % 2048;
     struct directory_s *directory=get_dummy_directory(); /* default value */
     struct directory_s *search=NULL;
 
@@ -478,25 +479,14 @@ static struct directory_s *search_directory(struct inode_s *inode)
     return directory;
 }
 
-int get_directory_link(struct inode_s *inode, struct inode_link_s *link)
-{
-    struct directory_s *directory=search_directory(inode);
-
-    link->type=INODE_LINK_TYPE_DIRECTORY;
-    link->link.ptr=(void *) directory;
-    return 0;
-}
-
 struct directory_s *get_directory(struct inode_s *inode)
 {
-    struct inode_link_s link;
-    get_directory_link(inode, &link);
-    return (struct directory_s *) link.link.ptr;
+    return search_directory(inode);
 }
 
 int get_inode_link_directory(struct inode_s *inode, struct inode_link_s *link)
 {
-    struct directory_s *directory=get_directory(inode);
+    struct directory_s *directory=search_directory(inode);
     memcpy(link, &directory->link, sizeof(struct inode_link_s));
     return 0;
 }
@@ -505,12 +495,11 @@ void set_inode_link_directory(struct inode_s *inode, struct inode_link_s *link)
 {
     struct directory_s *directory=get_directory(inode);
     memcpy(&directory->link, link, sizeof(struct inode_link_s));
-    return 0;
 }
 
 void _add_directory_hashtable(struct directory_s *directory)
 {
-    unsigned int hashvalue = directory->inode->ino % 2048;
+    unsigned int hashvalue = directory->inode->st.st_ino % 2048;
 
     pthread_mutex_lock(&directory_hashtable_mutex);
 
@@ -523,7 +512,7 @@ void _add_directory_hashtable(struct directory_s *directory)
 
 void _remove_directory_hashtable(struct directory_s *directory)
 {
-    unsigned int hashvalue = directory->inode->ino % 2048;
+    unsigned int hashvalue = directory->inode->st.st_ino % 2048;
 
     pthread_mutex_lock(&directory_hashtable_mutex);
 

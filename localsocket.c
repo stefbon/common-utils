@@ -35,7 +35,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/param.h>
-#include <dirent.h>
+#include <sys/socket.h>
+#include <netdb.h>
+
 #include <pthread.h>
 
 #include "logging.h"
@@ -46,6 +48,12 @@
 
 #include "utils.h"
 #include "localsocket.h"
+#include "udt-interface.h"
+#include "network-utils.h"
+
+/*
+    DEFAULT unix socket ops
+*/
 
 static int default_accept(struct fs_connection_s *conn, struct sockaddr *addr, unsigned int *len)
 {
@@ -105,7 +113,7 @@ static int default_finish()
 }
 
 static struct socket_ops_s default_sops = {
-    .type				=	SOCKET_OPS_TYPE_UNIX,
+    .type				=	SOCKET_OPS_TYPE_DEFAULT,
     .accept				=	default_accept,
     .bind				=	default_bind,
     .close				=	default_close,
@@ -212,7 +220,7 @@ void disconnect_cb_dummy(struct fs_connection_s *conn, unsigned char remote)
     struct fs_connection_s *s_conn=conn->ops.client.server;
 
     pthread_mutex_lock(&s_conn->ops.server.mutex);
-    remove_list_element(&s_conn->ops.server.head, &s_conn->ops.server.tail, &conn->list);
+    remove_list_element(&conn->list);
     pthread_mutex_unlock(&s_conn->ops.server.mutex);
 
     free(conn);
@@ -222,34 +230,51 @@ void init_cb_dummy(struct fs_connection_s *conn)
 {
 }
 
-void init_connection(struct fs_connection_s *conn, struct socket_ops_s *sops, unsigned char type)
+void init_connection(struct fs_connection_s *c, struct socket_ops_s *sops, unsigned char type, unsigned int family)
 {
 
-    if (sops==NULL) sops=&default_sops;
+    if (sops==NULL) {
 
-    memset(conn, 0, sizeof(struct fs_connection_s));
-    conn->type=type;
-    conn->fd=0;
-    init_xdata(&conn->xdata);
-    conn->data=NULL;
-    conn->list.next=NULL;
-    conn->list.prev=NULL;
-    conn->sops=sops;
+	if (type==FS_CONNECTION_TYPE_UDP) {
+
+	    /* use special libray for UDP: UDT*/
+
+	    setsocketopsudt(c);
+
+	} else {
+
+	    sops=&default_sops;
+
+	}
+
+    }
+
+    memset(c, 0, sizeof(struct fs_connection_s));
+
+    c->type=type;
+    c->family=family;
+    c->status=FS_CONNECTION_FLAG_INIT;
+    c->error=0;
+    c->expire=0;
+    c->fd=0;
+    c->xdata=NULL;
+    c->data=NULL;
+    init_list_element(&c->list, NULL);
+    c->sops=sops;
 
     if (type==FS_CONNECTION_TYPE_LOCALSERVER) {
 
-	conn->ops.server.accept=accept_cb_dummy;
-	conn->ops.server.head=NULL;
-	conn->ops.server.tail=NULL;
-	pthread_mutex_init(&conn->ops.server.mutex, NULL);
+	c->ops.server.accept=accept_cb_dummy;
+	init_list_header(&c->ops.server.header, SIMPLE_LIST_TYPE_EMPTY, NULL);
+	pthread_mutex_init(&c->ops.server.mutex, NULL);
 
     } else if (type==FS_CONNECTION_TYPE_LOCALCLIENT) {
 
-	conn->ops.client.uid=(uid_t) -1;
-	conn->ops.client.event=event_cb_dummy;
-	conn->ops.client.disconnect=disconnect_cb_dummy;
-	conn->ops.client.init=init_cb_dummy;
-	conn->ops.client.server=NULL;
+	c->ops.client.uid=(uid_t) -1;
+	c->ops.client.event=event_cb_dummy;
+	c->ops.client.disconnect=disconnect_cb_dummy;
+	c->ops.client.init=init_cb_dummy;
+	c->ops.client.server=NULL;
 
     }
 
@@ -267,7 +292,6 @@ static int accept_local_connection(int sfd, void *data, uint32_t events)
     s_len=sizeof(struct sockaddr_un);
 
     fd=(* s_conn->sops->accept)(s_conn, (struct sockaddr *) &local, &s_len);
-    // fd=accept4(sfd, (struct sockaddr *) &local, &s_len, 0);
 
     if (fd==-1) {
 
@@ -303,7 +327,7 @@ static int accept_local_connection(int sfd, void *data, uint32_t events)
     c_conn->sops=s_conn->sops; /* use the same socket ops */
 
     pthread_mutex_lock(&s_conn->ops.server.mutex);
-    add_list_element_first(&s_conn->ops.server.head, &s_conn->ops.server.tail, &c_conn->list);
+    add_list_element_first(&s_conn->ops.server.header, &c_conn->list);
     pthread_mutex_unlock(&s_conn->ops.server.mutex);
 
     (* c_conn->ops.client.init)(c_conn);
@@ -391,21 +415,22 @@ int create_local_serversocket(char *path, struct fs_connection_s *conn, struct b
     } else {
 	struct bevent_xdata_s *xdata=NULL;
 
-	xdata=add_to_beventloop(conn->fd, EPOLLIN, accept_local_connection, (void *) conn, &conn->xdata, loop);
+	xdata=add_to_beventloop(conn->fd, EPOLLIN, accept_local_connection, (void *) conn, NULL, loop);
 
-	if ( ! xdata) {
+	if (xdata) {
+
+    	    logoutput("create_server_socket: socket fd %i added to eventloop", conn->fd);
+	    result=conn->fd;
+	    conn->ops.server.accept=accept_cb;
+	    conn->xdata=xdata;
+
+	} else {
 
     	    logoutput("create_server_socket: error adding socket fd %i to eventloop.", conn->fd);
 
 	    *error=EIO;
 	    close(conn->fd);
 	    conn->fd=0;
-
-	} else {
-
-    	    logoutput("create_server_socket: socket fd %i added to eventloop", conn->fd);
-	    result=conn->fd;
-	    conn->ops.server.accept=accept_cb;
 
 	}
 
@@ -423,7 +448,7 @@ struct fs_connection_s *get_containing_connection(struct list_element_s *list)
 }
 struct fs_connection_s *get_next_connection(struct fs_connection_s *s_conn, struct fs_connection_s *c_conn)
 {
-    struct list_element_s *list=(c_conn) ? c_conn->list.next : s_conn->ops.server.head;
+    struct list_element_s *list=(c_conn) ? c_conn->list.n : s_conn->ops.server.header.head;
     return (list) ? get_containing_connection(list) : NULL;
 }
 int lock_connection_list(struct fs_connection_s *s_conn)
@@ -433,4 +458,95 @@ int lock_connection_list(struct fs_connection_s *s_conn)
 int unlock_connection_list(struct fs_connection_s *s_conn)
 {
     return pthread_mutex_unlock(&s_conn->ops.server.mutex);
+}
+
+int compare_network_connection(struct fs_connection_s *conn, char *address, unsigned int port)
+{
+    struct addrinfo h;
+    struct addrinfo *list, *w;
+    int result=-1;
+
+    if (conn==NULL || address==NULL) return -1;
+
+    memset(&h, 0, sizeof(struct addrinfo));
+
+    if (conn->family==FS_CONNECTION_FAMILY_IPv4) {
+
+	h.ai_family=AF_INET;
+	h.ai_socktype = SOCK_STREAM;
+
+    } else if (conn->family==FS_CONNECTION_FAMILY_IPv6) {
+
+	h.ai_family=AF_INET6;
+	h.ai_socktype = SOCK_STREAM;
+
+    } else {
+
+	h.ai_family=AF_UNSPEC;
+	h.ai_socktype = 0;
+
+    }
+
+    h.ai_protocol=0;
+    h.ai_flags=AI_CANONNAME;
+    h.ai_canonname=NULL;
+    h.ai_addrlen=0;
+    h.ai_addr=NULL;
+    h.ai_next=NULL;
+
+    result=getaddrinfo(address, NULL, &h, &list);
+
+    if (result>0) {
+
+	logoutput("compare_connection: error %s", gai_strerror(result));
+	return -1;
+
+    }
+
+    result=-1;
+
+    for (w=list; w != NULL; w = w->ai_next) {
+	char host[NI_MAXHOST+1];
+
+	/* try first hostname */
+
+	memset(host, '\0', NI_MAXHOST+1);
+
+	if (getnameinfo((struct sockaddr *) w->ai_addr, w->ai_addrlen, host, NI_MAXHOST, NULL, 0, 0)==0) {
+
+	    if (strcmp(address, host)==0) {
+
+		result=0;
+		goto out;
+
+	    }
+
+	}
+
+	if (check_family_ip_address(address, "ipv4")==0 && w->ai_addr->sa_family==AF_INET) {
+	    struct sockaddr_in *s=(struct sockaddr_in *) w->ai_addr;
+	    char *tmp=inet_ntoa(s->sin_addr);
+
+	    if (strcmp(tmp, address)==0) {
+
+
+		free(tmp);
+		result=0;
+		goto out;
+
+	    }
+
+	    free(tmp);
+
+	}
+
+	/* what to do with IPv6 ?*/
+
+    }
+
+    out:
+
+    free(list);
+    return result;
+
 }

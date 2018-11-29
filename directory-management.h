@@ -17,8 +17,8 @@
 
 */
 
-#ifndef FUSE_DIRECTORY_MANAGEMENT_H
-#define FUSE_DIRECTORY_MANAGEMENT_H
+#ifndef SB_COMMON_UTILS_DIRECTORY_MANAGEMENT_H
+#define SB_COMMON_UTILS_DIRECTORY_MANAGEMENT_H
 
 #include "simple-locking.h"
 
@@ -41,7 +41,7 @@ struct pathcalls_s {
 struct dops_s {
     struct entry_s 			*(*find_entry)(struct entry_s *parent, struct name_s *xname, unsigned int *error);
     void 				(*remove_entry)(struct entry_s *entry, unsigned int *error);
-    struct entry_s 			*(*insert_entry)(struct entry_s *entry, unsigned int *error, unsigned short flags);
+    struct entry_s 			*(*insert_entry)(struct directory_s *directory, struct entry_s *entry, unsigned int *error, unsigned short flags);
     struct directory_s			*(*create_directory)(struct inode_s *inode, unsigned int *error);
     struct directory_s			*(*remove_directory)(struct inode_s *inode, unsigned int *error);
     struct entry_s 			*(*find_entry_batch)(struct directory_s *directory, struct name_s *xname, unsigned int *error);

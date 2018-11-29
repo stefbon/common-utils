@@ -45,13 +45,14 @@
 #include "workerthreads.h"
 #include "pathinfo.h"
 #include "beventloop.h"
+#include "beventloop-xdata.h"
+#include "options.h"
+#include "utils.h"
 
 #include "entry-management.h"
 #include "directory-management.h"
 #include "entry-utils.h"
 
-#include "options.h"
-#include "utils.h"
 #include "simple-list.h"
 #include "simple-hash.h"
 
@@ -62,8 +63,7 @@
 #include "logging.h"
 
 struct list_watches_s {
-    struct list_element_s	*head;
-    struct list_element_s	*tail;
+    struct list_header_s	header;
     pthread_mutex_t		mutex;
 };
 
@@ -293,14 +293,14 @@ static struct notifywatch_s *get_container_watch(struct list_element_s *list)
 void add_watch_list_watches(struct notifywatch_s *watch)
 {
     pthread_mutex_lock(&list_watches.mutex);
-    add_list_element_first(&list_watches.head, &list_watches.tail, &watch->list);
+    add_list_element_first(&list_watches.header, &watch->list);
     pthread_mutex_unlock(&list_watches.mutex);
 }
 
 void remove_watch_list_watches(struct notifywatch_s *watch)
 {
     pthread_mutex_lock(&list_watches.mutex);
-    remove_list_element(&list_watches.head, &list_watches.tail, &watch->list);
+    remove_list_element(&watch->list);
     pthread_mutex_unlock(&list_watches.mutex);
 }
 
@@ -310,13 +310,13 @@ struct notifywatch_s *lookup_watch(struct pathinfo_s *pathinfo)
     struct list_element_s *list=NULL;
 
     pthread_mutex_lock(&list_watches.mutex);
-    list=list_watches.head;
+    list=list_watches.header.head;
 
-    while(list) {
+    while (list) {
 
 	watch=get_container_watch(list);
 	if (strcmp(pathinfo->path, watch->pathinfo.path)==0) break;
-	list=list->next;
+	list=list->n;
 	watch=NULL;
 
     }
@@ -381,9 +381,7 @@ struct notifywatch_s *add_notifywatch( unsigned int mask,
 	watch->backend=NULL;
 	watch->process_fsevent=cb;
 	watch->data=data;
-	watch->list.next=NULL;
-	watch->list.prev=NULL;
-
+	init_list_element(&watch->list, NULL);
 	watch->pathinfo.path=malloc(pathinfo->len+1);
 
 	if (watch->pathinfo.path) {
@@ -469,12 +467,12 @@ void remove_list_watches()
 
     pthread_mutex_lock(&list_watches.mutex);
 
-    list=list_watches.head;
+    list=list_watches.header.head;
 
     while (list) {
 
 	watch=get_container_watch(list);
-	remove_list_element(&list_watches.head, &list_watches.tail, &watch->list);
+	remove_list_element(&watch->list);
 
 	pthread_mutex_lock(&watch->mutex);
 	watch->mask=0;
@@ -485,7 +483,7 @@ void remove_list_watches()
 	free_path_pathinfo(&watch->pathinfo);
 	free(watch);
 
-	list=list_watches.head;
+	list=list_watches.header.head;
 
     }
 
@@ -496,8 +494,7 @@ void remove_list_watches()
 
 int init_fschangenotify(struct beventloop_s *loop, unsigned int *error)
 {
-    list_watches.head=NULL;
-    list_watches.tail=NULL;
+    init_list_header(&list_watches.header, SIMPLE_LIST_TYPE_EMPTY, NULL);
     pthread_mutex_init(&list_watches.mutex, NULL);
     initialize_fsnotify_backend(loop, error);
     return (*error>0) ? -1 : 0;

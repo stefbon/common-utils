@@ -49,19 +49,17 @@
 #include "logging.h"
 
 #include "pathinfo.h"
+#include "utils.h"
 #include "beventloop.h"
+#include "options.h"
 
 #include "entry-management.h"
 #include "directory-management.h"
 #include "entry-utils.h"
-
-#include "utils.h"
-#include "options.h"
-
 #include "fuse-fs.h"
 #include "workspaces.h"
 #include "workspace-context.h"
-
+#include "path-caching.h"
 #include "fuse-fs-common.h"
 
 #define UINT32_T_MAX		0xFFFFFFFF
@@ -116,7 +114,7 @@ struct entry_s *get_target_symlink(struct workspace_mount_s *mount, struct entry
 	    logoutput("get_target_symlink: test absolute path %s", path);
 
 	    if (strncmp(mount->mountpoint.path, path, len)==0 && *(path+len)=='/') {
-		char *subpath=path + len + 1;
+		const char *subpath=path + len + 1;
 		char buffer[strlen(subpath)+1];
 
 		strcpy(buffer, subpath);
@@ -128,7 +126,7 @@ struct entry_s *get_target_symlink(struct workspace_mount_s *mount, struct entry
 	}
 
     } else {
-	char *pos=path;
+	const char *pos=path;
 
 	/*
 	    relative
@@ -149,7 +147,6 @@ struct entry_s *get_target_symlink(struct workspace_mount_s *mount, struct entry
 		char buffer[len+1];
 
 		strcpy(buffer, pos);
-
 		entry=walk_fuse_fs(parent, buffer);
 
 	    }
@@ -169,12 +166,18 @@ struct entry_s *get_target_symlink(struct workspace_mount_s *mount, struct entry
 void _fs_common_cached_lookup(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode)
 {
     struct fuse_entry_out entry_out;
-    struct timespec *attr_timeout=get_fuse_interface_attr_timeout(context->interface.ptr);
-    struct timespec *entry_timeout=get_fuse_interface_entry_timeout(context->interface.ptr);
+    struct timespec *attr_timeout=NULL;
+    struct timespec *entry_timeout=NULL;
+
+    logoutput("_fs_common_cached_lookup: ino %li name %.*s", inode->st.st_ino, inode->alias->name.len, inode->alias->name.name);
+
+    context=get_root_context(context);
+    attr_timeout=get_fuse_interface_attr_timeout(context->interface.ptr);
+    entry_timeout=get_fuse_interface_entry_timeout(context->interface.ptr);
 
     inode->nlookup++;
 
-    entry_out.nodeid=inode->ino;
+    entry_out.nodeid=inode->st.st_ino;
     entry_out.generation=0; /* todo: add a generation field to reuse existing inodes */
 
     entry_out.entry_valid=entry_timeout->tv_sec;
@@ -183,25 +186,24 @@ void _fs_common_cached_lookup(struct service_context_s *context, struct fuse_req
     entry_out.attr_valid=attr_timeout->tv_sec;
     entry_out.attr_valid_nsec=attr_timeout->tv_nsec;
 
-    entry_out.attr.ino=inode->ino;
-    entry_out.attr.size=inode->size;
+    entry_out.attr.ino=inode->st.st_ino;
+    entry_out.attr.size=inode->st.st_size;
 
     entry_out.attr.blksize=_DEFAULT_BLOCKSIZE;
-    entry_out.attr.blocks=inode->size / _DEFAULT_BLOCKSIZE + (inode->size % _DEFAULT_BLOCKSIZE == 0) ? 0 : 1;
+    entry_out.attr.blocks=inode->st.st_size / _DEFAULT_BLOCKSIZE + (inode->st.st_size % _DEFAULT_BLOCKSIZE == 0) ? 0 : 1;
 
-    entry_out.attr.atime=(uint64_t) inode->atim.tv_sec;
-    entry_out.attr.atimensec=(uint32_t) inode->atim.tv_nsec;
+    entry_out.attr.atime=(uint64_t) inode->st.st_atim.tv_sec;
+    entry_out.attr.atimensec=(uint32_t) inode->st.st_atim.tv_nsec;
 
-    entry_out.attr.mtime=(uint64_t) inode->mtim.tv_sec;
-    entry_out.attr.mtimensec=(uint32_t) inode->mtim.tv_nsec;
+    entry_out.attr.mtime=(uint64_t) inode->st.st_mtim.tv_sec;
+    entry_out.attr.mtimensec=(uint32_t) inode->st.st_mtim.tv_nsec;
+    entry_out.attr.ctime=(uint64_t) inode->st.st_ctim.tv_sec;
+    entry_out.attr.ctimensec=(uint32_t) inode->st.st_ctim.tv_nsec;
 
-    entry_out.attr.ctime=(uint64_t) inode->ctim.tv_sec;
-    entry_out.attr.ctimensec=(uint32_t) inode->ctim.tv_nsec;
-
-    entry_out.attr.mode=inode->mode;
-    entry_out.attr.nlink=inode->nlink;
-    entry_out.attr.uid=inode->uid;
-    entry_out.attr.gid=inode->gid;
+    entry_out.attr.mode=inode->st.st_mode;
+    entry_out.attr.nlink=inode->st.st_nlink;
+    entry_out.attr.uid=inode->st.st_uid;
+    entry_out.attr.gid=inode->st.st_gid;
     entry_out.attr.rdev=0; /* no special devices supported */
 
     entry_out.attr.padding=0;
@@ -217,13 +219,17 @@ void _fs_common_cached_create(struct service_context_s *context, struct fuse_req
     struct fuse_open_out open_out;
     unsigned int size_entry_out=sizeof(struct fuse_entry_out);
     unsigned int size_open_out=sizeof(struct fuse_open_out);
-    struct timespec *attr_timeout=get_fuse_interface_attr_timeout(context->interface.ptr);
-    struct timespec *entry_timeout=get_fuse_interface_entry_timeout(context->interface.ptr);
+    struct timespec *attr_timeout=NULL;
+    struct timespec *entry_timeout=NULL;
+
+    context=get_root_context(context);
+    attr_timeout=get_fuse_interface_attr_timeout(context->interface.ptr);
+    entry_timeout=get_fuse_interface_entry_timeout(context->interface.ptr);
     char buffer[size_entry_out + size_open_out];
 
     // inode->nlookup++;
 
-    entry_out.nodeid=inode->ino;
+    entry_out.nodeid=inode->st.st_ino;
     entry_out.generation=0; /* todo: add a generation field to reuse existing inodes */
 
     entry_out.entry_valid=entry_timeout->tv_sec;
@@ -232,25 +238,25 @@ void _fs_common_cached_create(struct service_context_s *context, struct fuse_req
     entry_out.attr_valid=attr_timeout->tv_sec;
     entry_out.attr_valid_nsec=attr_timeout->tv_nsec;
 
-    entry_out.attr.ino=inode->ino;
-    entry_out.attr.size=inode->size;
+    entry_out.attr.ino=inode->st.st_ino;
+    entry_out.attr.size=inode->st.st_size;
 
     entry_out.attr.blksize=_DEFAULT_BLOCKSIZE;
-    entry_out.attr.blocks=inode->size / _DEFAULT_BLOCKSIZE + (inode->size % _DEFAULT_BLOCKSIZE == 0) ? 0 : 1;
+    entry_out.attr.blocks=inode->st.st_size / _DEFAULT_BLOCKSIZE + (inode->st.st_size % _DEFAULT_BLOCKSIZE == 0) ? 0 : 1;
 
-    entry_out.attr.atime=(uint64_t) inode->atim.tv_sec;
-    entry_out.attr.atimensec=(uint32_t) inode->atim.tv_nsec;
+    entry_out.attr.atime=(uint64_t) inode->st.st_atim.tv_sec;
+    entry_out.attr.atimensec=(uint32_t) inode->st.st_atim.tv_nsec;
 
-    entry_out.attr.mtime=(uint64_t) inode->mtim.tv_sec;
-    entry_out.attr.mtimensec=(uint32_t) inode->mtim.tv_nsec;
+    entry_out.attr.mtime=(uint64_t) inode->st.st_mtim.tv_sec;
+    entry_out.attr.mtimensec=(uint32_t) inode->st.st_mtim.tv_nsec;
 
-    entry_out.attr.ctime=(uint64_t) inode->ctim.tv_sec;
-    entry_out.attr.ctimensec=(uint32_t) inode->ctim.tv_nsec;
+    entry_out.attr.ctime=(uint64_t) inode->st.st_ctim.tv_sec;
+    entry_out.attr.ctimensec=(uint32_t) inode->st.st_ctim.tv_nsec;
 
-    entry_out.attr.mode=inode->mode;
-    entry_out.attr.nlink=inode->nlink;
-    entry_out.attr.uid=inode->uid;
-    entry_out.attr.gid=inode->gid;
+    entry_out.attr.mode=inode->st.st_mode;
+    entry_out.attr.nlink=inode->st.st_nlink;
+    entry_out.attr.uid=inode->st.st_uid;
+    entry_out.attr.gid=inode->st.st_gid;
     entry_out.attr.rdev=0; /* no special devices supported */
 
     entry_out.attr.padding=0;
@@ -274,9 +280,9 @@ void _fs_common_virtual_lookup(struct service_context_s *context, struct fuse_re
     struct name_s xname={NULL, 0, 0};
     unsigned int error=0;
 
-    logoutput("_fs_common_virtual_lookup: name %.*s, parent %li:%.*s (thread %i)", len, name, (long) inode->ino, parent->name.len, parent->name.name, (int) gettid());
+    logoutput("_fs_common_virtual_lookup: name %.*s %li (thread %i)", len, name, (long) inode->st.st_ino, (int) gettid());
 
-    xname.name=name;
+    xname.name=(char *)name;
     xname.len=strlen(name);
     calculate_nameindex(&xname);
 
@@ -294,9 +300,9 @@ void _fs_common_virtual_lookup(struct service_context_s *context, struct fuse_re
 
 	logoutput("_fs_common_virtual_lookup: name %.*s nlookup %i", entry->name.len, entry->name.name, inode->nlookup);
 	inode->nlookup++;
-	fs_get_inode_link(inode, &link);
+	get_inode_link(inode, &link);
 
-	if (link.type==INODE_LINK_TYPE_CONTEXT && (((struct service_context_s *) link.link.ptr) != context)) {
+	if (link.type==INODE_LINK_TYPE_CONTEXT) {
 	    struct service_context_s *service_context=(struct service_context_s *) link.link.ptr;
 	    struct pathinfo_s pathinfo=PATHINFO_INIT;
 	    unsigned int pathlen=2;
@@ -335,34 +341,38 @@ void _fs_common_virtual_lookup(struct service_context_s *context, struct fuse_re
 void _fs_common_getattr(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode)
 {
     struct fuse_attr_out attr_out;
-    struct timespec *attr_timeout=get_fuse_interface_attr_timeout(context->interface.ptr);
+    struct timespec *attr_timeout=NULL;
+
+    logoutput("_fs_common_getattr: context %s", context->name);
+
+    context=get_root_context(context);
+    attr_timeout=get_fuse_interface_attr_timeout(context->interface.ptr);
 
     attr_out.attr_valid=attr_timeout->tv_sec;
     attr_out.attr_valid_nsec=attr_timeout->tv_nsec;
 
-    attr_out.attr.ino=inode->ino;
-    attr_out.attr.size=inode->size;
+    attr_out.attr.ino=inode->st.st_ino;
+    attr_out.attr.size=inode->st.st_size;
 
     attr_out.attr.blksize=_DEFAULT_BLOCKSIZE;
-    attr_out.attr.blocks=inode->size / _DEFAULT_BLOCKSIZE + (inode->size % _DEFAULT_BLOCKSIZE == 0) ? 0 : 1;
+    attr_out.attr.blocks=inode->st.st_size / _DEFAULT_BLOCKSIZE + (inode->st.st_size % _DEFAULT_BLOCKSIZE == 0) ? 0 : 1;
 
-    attr_out.attr.atime=(uint64_t) inode->atim.tv_sec;
-    attr_out.attr.atimensec=(uint32_t) inode->atim.tv_nsec;
+    attr_out.attr.atime=(uint64_t) inode->st.st_atim.tv_sec;
+    attr_out.attr.atimensec=(uint32_t) inode->st.st_atim.tv_nsec;
 
-    attr_out.attr.mtime=(uint64_t) inode->mtim.tv_sec;
-    attr_out.attr.mtimensec=(uint32_t) inode->mtim.tv_nsec;
+    attr_out.attr.mtime=(uint64_t) inode->st.st_mtim.tv_sec;
+    attr_out.attr.mtimensec=(uint32_t) inode->st.st_mtim.tv_nsec;
 
-    attr_out.attr.ctime=(uint64_t) inode->ctim.tv_sec;
-    attr_out.attr.ctimensec=(uint32_t) inode->ctim.tv_nsec;
+    attr_out.attr.ctime=(uint64_t) inode->st.st_ctim.tv_sec;
+    attr_out.attr.ctimensec=(uint32_t) inode->st.st_ctim.tv_nsec;
 
-    attr_out.attr.mode=inode->mode;
-    attr_out.attr.nlink=inode->nlink;
-    attr_out.attr.uid=inode->uid;
-    attr_out.attr.gid=inode->gid;
+    attr_out.attr.mode=inode->st.st_mode;
+    attr_out.attr.nlink=inode->st.st_nlink;
+    attr_out.attr.uid=inode->st.st_uid;
+    attr_out.attr.gid=inode->st.st_gid;
     attr_out.attr.rdev=0; /* no special devices supported */
 
     attr_out.attr.padding=0;
-
     attr_out.dummy=0;
 
     reply_VFS_data(request, (char *) &attr_out, sizeof(attr_out));
@@ -372,10 +382,12 @@ void _fs_common_getattr(struct service_context_s *context, struct fuse_request_s
 void _fs_common_virtual_opendir(struct fuse_opendir_s *opendir, struct fuse_request_s *request, unsigned int flags)
 {
     unsigned int error=0;
-    struct directory_s *directory=get_directory(opendir->inode);
+    struct directory_s *directory=NULL;
     struct fuse_open_out open_out;
 
-    logoutput("OPENDIR virtual (thread %i)", (int) gettid());
+    logoutput("_fs_common_virtual_opendir: ino %li", opendir->inode->st.st_ino);
+
+    directory=get_directory(opendir->inode);
 
     if (directory) {
 
@@ -393,124 +405,121 @@ void _fs_common_virtual_opendir(struct fuse_opendir_s *opendir, struct fuse_requ
 
 void _fs_common_virtual_readdir(struct fuse_opendir_s *opendir, struct fuse_request_s *request, size_t size, off_t offset)
 {
+    struct stat st;
+    size_t pos=0, dirent_size=0;
+    struct directory_s *directory=NULL;
+    struct name_s xname={NULL, 0, 0};
+    struct inode_s *inode=NULL;
+    struct entry_s *entry=NULL;
+    char buff[size];
+    unsigned int error=0;
+    struct simple_lock_s rlock;
 
     if (opendir->mode & _FUSE_READDIR_MODE_FINISH) {
 	char dummy='\0';
 
-	logoutput("READDIR virtual (thread %i) finish", (int) gettid());
+	logoutput("_fs_common_virtual_readdir: finish");
 	reply_VFS_data(request, &dummy, 0);
+	return;
+
+    }
+
+    logoutput("_fs_common_virtual_readdir");
+
+    if (rlock_directory(opendir->inode, &rlock)==0) {
+
+	directory=get_directory(opendir->inode);
+	if (offset==0) opendir->handle.ptr=(void *) directory->first;
 
     } else {
-	struct stat st;
-	size_t pos=0, dirent_size=0;
-	struct directory_s *directory=NULL;
-	struct name_s xname={NULL, 0, 0};
-	struct inode_s *inode=NULL;
-	struct entry_s *entry=NULL;
-	char buff[size];
-	unsigned int error=0;
-	struct simple_lock_s rlock;
 
-	logoutput("READDIR virtual (thread %i)", (int) gettid());
+	reply_VFS_error(request, EAGAIN);
+	return;
 
-	if (rlock_directory(opendir->inode, &rlock)==0) {
+    }
 
-	    directory=get_directory(opendir->inode);
-	    if (offset==0) opendir->handle.ptr=(void *) directory->first;
+    memset(&st, 0, sizeof(struct stat));
 
-	} else {
+    while (pos<size) {
 
-	    reply_VFS_error(request, EAGAIN);
-	    return;
+	if (offset==0) {
 
-	}
+	    inode=opendir->inode;
 
-	memset(&st, 0, sizeof(struct stat));
+    	    /* the . entry */
 
-	while (pos<size) {
+    	    st.st_ino = inode->st.st_ino;
+	    st.st_mode = S_IFDIR;
+	    xname.name = (char *) dotname;
+	    xname.len=1;
 
-	    if (offset==0) {
+    	} else if (offset==1) {
+    	    struct entry_s *parent=NULL;
 
-		inode=opendir->inode;
+	    inode=opendir->inode;
 
-    		/* the . entry */
+	    /* the .. entry */
 
-    		st.st_ino = inode->ino;
-		st.st_mode = S_IFDIR;
-		xname.name = (char *) dotname;
-		xname.len=1;
+	    parent=inode->alias;
+	    if (parent->parent) inode=parent->parent->inode;
 
-    	    } else if (offset==1) {
-    		struct entry_s *parent=NULL;
+    	    st.st_ino = inode->st.st_ino;
+	    st.st_mode = S_IFDIR;
+	    xname.name = (char *) dotdotname;
+	    xname.len=2;
 
-		inode=opendir->inode;
+    	} else {
 
-		/* the .. entry */
+	    entry=opendir->entry;
 
-		parent=inode->alias;
-		if (parent->parent) inode=parent->parent->inode;
+	    if (entry==NULL) {
 
-    		st.st_ino = inode->ino;
-		st.st_mode = S_IFDIR;
-		xname.name = (char *) dotdotname;
-		xname.len=2;
+		readdir:
 
-    	    } else {
+		entry=(struct entry_s *) opendir->handle.ptr;
 
-		if (! opendir->entry) {
+		if (entry) {
 
-		    readdir:
-
-		    entry=(struct entry_s *) opendir->handle.ptr;
-
-		    if (entry) {
-
-			opendir->handle.ptr=(void *) entry->name_next;
-
-		    } else {
-
-			opendir->mode |= _FUSE_READDIR_MODE_FINISH;
-			break;
-
-		    }
+		    opendir->handle.ptr=(void *) entry->name_next;
 
 		} else {
 
-		    entry=opendir->entry;
+		    opendir->mode |= _FUSE_READDIR_MODE_FINISH;
+		    break;
 
 		}
 
-		inode=entry->inode;
-
-		st.st_ino=inode->ino;
-		st.st_mode=inode->mode;
-		xname.name=entry->name.name;
-		xname.len=entry->name.len;
-
 	    }
 
-	    get_inode_stat(inode, &st);
-	    dirent_size=add_direntry_buffer(request->interface->ptr, buff + pos, size - pos, offset + 1, &xname, &st, &error);
+	    inode=entry->inode;
 
-	    if (error==ENOBUFS) {
-
-		opendir->entry=entry; /* keep it for the next batch */
-		break;
-
-	    }
-
-	    /* increase counter and clear the various fields */
-
-	    opendir->entry=NULL; /* forget current entry to force readdir */
-	    offset++;
-	    pos+=dirent_size;
+	    st.st_ino=inode->st.st_ino;
+	    st.st_mode=inode->st.st_mode;
+	    xname.name=entry->name.name;
+	    xname.len=entry->name.len;
 
 	}
 
-	reply_VFS_data(request, buff, pos);
-	unlock_directory(opendir->inode, &rlock);
+	// get_inode_stat(inode, &st);
+	dirent_size=add_direntry_buffer(request->interface->ptr, buff + pos, size - pos, offset + 1, &xname, &st, &error);
+
+	if (error==ENOBUFS) {
+
+	    opendir->entry=entry; /* keep it for the next batch */
+	    break;
+
+	}
+
+	/* increase counter and clear the various fields */
+
+	opendir->entry=NULL; /* forget current entry to force readdir */
+	offset++;
+	pos+=dirent_size;
 
     }
+
+    unlock_directory(opendir->inode, &rlock);
+    reply_VFS_data(request, buff, pos);
 
 }
 
@@ -518,134 +527,135 @@ void _fs_common_virtual_readdir(struct fuse_opendir_s *opendir, struct fuse_requ
 
 void _fs_common_virtual_readdirplus(struct fuse_opendir_s *opendir, struct fuse_request_s *request, size_t size, off_t offset)
 {
+    struct stat st;
+    size_t pos=0, dirent_size=0;
+    struct directory_s *directory=NULL;
+    struct name_s xname={NULL, 0, 0};
+    struct inode_s *inode=NULL;
+    struct entry_s *entry=NULL;
+    char buff[size];
+    unsigned int error=0;
+    struct simple_lock_s rlock;
 
     if (opendir->mode & _FUSE_READDIR_MODE_FINISH) {
 	char dummy='\0';
 
-	logoutput("READDIRPLUS virtual (thread %i) finish", (int) gettid());
+	logoutput("_fs_common_virtual_readdirplus: finish");
 	reply_VFS_data(request, &dummy, 0);
+	return;
+
+    }
+
+    logoutput("_fs_common_virtual_readdirplus");
+
+    if (rlock_directory(opendir->inode, &rlock)==0) {
+
+	directory=get_directory(opendir->inode);
+	if (offset==0) opendir->handle.ptr=(void *) directory->first;
 
     } else {
-	struct stat st;
-	size_t pos=0, dirent_size=0;
-	struct directory_s *directory=NULL;
-	struct name_s xname={NULL, 0, 0};
-	struct inode_s *inode=NULL;
-	struct entry_s *entry=NULL;
-	char buff[size];
-	unsigned int error=0;
-	struct simple_lock_s rlock;
 
-	logoutput("READDIRPLUS virtual (thread %i)", (int) gettid());
+	reply_VFS_error(request, EAGAIN);
+	return;
 
-	if (rlock_directory(opendir->inode, &rlock)==0) {
+    }
 
-	    directory=get_directory(opendir->inode);
-	    if (offset==0) opendir->handle.ptr=(void *) directory->first;
+    memset(&st, 0, sizeof(struct stat));
 
-	} else {
+    while (pos<size) {
 
-	    reply_VFS_error(request, EAGAIN);
-	    return;
+	if (offset==0) {
 
-	}
+	    inode=opendir->inode;
 
-	memset(&st, 0, sizeof(struct stat));
+    	    /* the . entry */
 
-	while (pos<size) {
+    	    st.st_ino = inode->st.st_ino;
+	    st.st_mode = S_IFDIR;
+	    xname.name = (char *) dotname;
+	    xname.len=1;
 
-	    if (offset==0) {
+    	} else if (offset==1) {
+    	    struct entry_s *parent=NULL;
 
-		inode=opendir->inode;
+	    inode=opendir->inode;
 
-    		/* the . entry */
+	    /* the .. entry */
 
-    		st.st_ino = inode->ino;
-		st.st_mode = S_IFDIR;
-		xname.name = (char *) dotname;
-		xname.len=1;
+	    parent=inode->alias;
+	    if (parent->parent) inode=parent->parent->inode;
 
-    	    } else if (offset==1) {
-    		struct entry_s *parent=NULL;
+    	    st.st_ino = inode->st.st_ino;
+	    st.st_mode = S_IFDIR;
+	    xname.name = (char *) dotdotname;
+	    xname.len=2;
 
-		inode=opendir->inode;
+    	} else {
 
-		/* the .. entry */
+	    if (opendir->entry) {
 
-		parent=inode->alias;
-		if (parent->parent) inode=parent->parent->inode;
+		entry=opendir->entry;
 
-    		st.st_ino = inode->ino;
-		st.st_mode = S_IFDIR;
-		xname.name = (char *) dotdotname;
-		xname.len=2;
 
-    	    } else {
+	    } else {
 
-		if (! opendir->entry) {
+		readdir:
 
-		    readdir:
+		entry=(struct entry_s *) opendir->handle.ptr;
 
-		    entry=(struct entry_s *) opendir->handle.ptr;
+		if (entry) {
 
-		    if (entry) {
-
-			opendir->handle.ptr=(void *) entry->name_next;
-
-		    } else {
-
-			opendir->mode |= _FUSE_READDIR_MODE_FINISH;
-			break;
-
-		    }
+		    opendir->handle.ptr=(void *) entry->name_next;
 
 		} else {
 
-		    entry=opendir->entry;
+		    opendir->mode |= _FUSE_READDIR_MODE_FINISH;
+		    break;
 
 		}
 
-		inode=entry->inode;
-
-		st.st_ino=inode->ino;
-		st.st_mode=inode->mode;
-		xname.name=entry->name.name;
-		xname.len=entry->name.len;
-		inode->nlookup++;
-
-		entry=entry->name_next;
 
 	    }
 
-	    get_inode_stat(inode, &st);
-	    dirent_size=add_direntry_plus_buffer(request->interface->ptr, buff + pos, size - pos, offset + 1, &xname, &st, &error);
+	    inode=entry->inode;
 
-	    if (error==ENOBUFS) {
+	    st.st_ino=inode->st.st_ino;
+	    st.st_mode=inode->st.st_mode;
+	    xname.name=entry->name.name;
+	    xname.len=entry->name.len;
+	    inode->nlookup++;
 
-		opendir->entry=entry; /* keep it for the next batch */
-		break;
-
-	    }
-
-	    /* increase counter and clear the various fields */
-
-	    opendir->entry=NULL; /* forget current entry to force readdir */
-	    offset++;
-	    pos+=dirent_size;
+	    entry=entry->name_next;
 
 	}
 
-	reply_VFS_data(request, buff, pos);
-	unlock_directory(opendir->inode, &rlock);
+	// get_inode_stat(inode, &st);
+	dirent_size=add_direntry_plus_buffer(request->interface->ptr, buff + pos, size - pos, offset + 1, &xname, &st, &error);
+
+	if (error==ENOBUFS) {
+
+	    opendir->entry=entry; /* keep it for the next batch */
+	    break;
+
+	}
+
+	/* increase counter and clear the various fields */
+
+	opendir->entry=NULL; /* forget current entry to force readdir */
+	offset++;
+	pos+=dirent_size;
 
     }
+
+    reply_VFS_data(request, buff, pos);
+    unlock_directory(opendir->inode, &rlock);
 
 }
 
 void _fs_common_virtual_releasedir(struct fuse_opendir_s *opendir, struct fuse_request_s *request)
 {
 
-    logoutput("RELEASEDIR virtual (thread %i)", (int) gettid());
+    logoutput("_fs_common_virtual_releasedir");
     reply_VFS_error(request, 0);
 
 }
@@ -655,135 +665,30 @@ void _fs_common_virtual_fsyncdir(struct fuse_opendir_s *opendir, struct fuse_req
     reply_VFS_error(request, 0);
 }
 
-/*
-    common functions to create
-*/
-
-struct _fs_common_create_struct {
-    struct workspace_mount_s			*workspace;
-    struct stat 				*st;
-    unsigned char				mayexist;
-    unsigned int 				*error;
-};
-
-static void _fs_common_create_cb_created(struct entry_s *entry, void *data)
+struct entry_s *_fs_common_create_entry(struct workspace_mount_s *workspace, struct entry_s *parent, struct name_s *xname, struct stat *st, unsigned int size, unsigned int flags, unsigned int *error)
 {
-    struct _fs_common_create_struct *_create_common=(struct _fs_common_create_struct *) data;
-    struct stat *st=_create_common->st;
-    struct inode_s *inode=entry->inode;
-
-    logoutput("_fs_common_create_cb_created: %s", entry->name.name);
-
-    fill_inode_stat(inode, _create_common->st);
-
-    memcpy(&inode->ctim, &st->st_ctim, sizeof(struct timespec));
-    memcpy(&inode->mtim, &st->st_mtim, sizeof(struct timespec));
-    memcpy(&inode->atim, &st->st_atim, sizeof(struct timespec));
-    inode->mode=st->st_mode;
-    inode->nlookup=1;
-    inode->nlink=1;
-    inode->size=st->st_size;
-
-    add_inode_context(_create_common->workspace->context, inode);
-
-    if (S_ISDIR(st->st_mode)) {
-
-	inode->nlink=2;
-
-	if (entry->parent) {
-
-	    /* adjust the parent inode:
-		- a directory is added: link count is changed: ctim
-	    */
-
-	    entry->parent->inode->nlink++;
-	    memcpy(&entry->parent->inode->ctim, &inode->mtim, sizeof(struct timespec));
-
-	}
-
-    } else {
-
-	if (entry->parent) {
-
-	    /* adjust the parent inode:
-		- a file is added: mtim
-	    */
-
-	    entry->parent->inode->nlink++;
-	    memcpy(&entry->parent->inode->mtim, &inode->mtim, sizeof(struct timespec));
-
-	}
-
-    }
-
-    logoutput("_fs_common_create_cb_created: finish");
-
-}
-
-static void _fs_common_create_cb_found(struct entry_s *entry, void *data)
-{
-    struct _fs_common_create_struct *_create_common=(struct _fs_common_create_struct *) data;
-
-    logoutput("_fs_common_create_cb_found: %s", entry->name.name);
-
-    if (_create_common->mayexist==1) {
-	struct inode_s *inode=entry->inode;
-
-	fill_inode_stat(entry->inode, _create_common->st);
-	*_create_common->error=0;
-
-    } else {
-
-	*_create_common->error=EEXIST;
-
-    }
-
-}
-
-static void _fs_common_create_cb_error(struct entry_s *parent, struct name_s *xname, void *data, unsigned int error)
-{
-    struct _fs_common_create_struct *_create_common=(struct _fs_common_create_struct *) data;
-
-    logoutput("_fs_common_create_cb_error: error %i:%s creating %s", error, strerror(error), xname->name);
-
-    *_create_common->error=error;
-
-}
-
-struct entry_s *_fs_common_create_entry(struct workspace_mount_s *workspace, struct entry_s *parent, struct name_s *xname, struct stat *st, unsigned char mayexist, unsigned int *error)
-{
-    struct _fs_common_create_struct _create_common;
+    struct create_entry_s ce;
     unsigned int dummy=0;
-
-    if (error==0) error=&dummy;
-
-    _create_common.workspace=workspace;
-    _create_common.st=st;
-    _create_common.mayexist=mayexist;
-    _create_common.error=error;
 
     logoutput("_fs_common_create_entry");
 
-    return create_entry_extended(parent, xname, _fs_common_create_cb_created, _fs_common_create_cb_found, _fs_common_create_cb_error, (void *) &_create_common);
+    if (error==0) error=&dummy;
+    init_create_entry(&ce, xname, parent, NULL, NULL, workspace->context, st, NULL);
 
+    return create_entry_extended(&ce);
 }
 
-struct entry_s *_fs_common_create_entry_unlocked(struct workspace_mount_s *workspace, struct directory_s *directory, struct name_s *xname, struct stat *st, unsigned char mayexist, unsigned int *error)
+struct entry_s *_fs_common_create_entry_unlocked(struct workspace_mount_s *workspace, struct directory_s *directory, struct name_s *xname, struct stat *st, unsigned int size, unsigned int flags, unsigned int *error)
 {
-    struct _fs_common_create_struct _create_common;
+    struct create_entry_s ce;
     unsigned int dummy=0;
-
-    if (error==0) error=&dummy;
-
-    _create_common.workspace=workspace;
-    _create_common.st=st;
-    _create_common.mayexist=mayexist;
-    _create_common.error=error;
 
     logoutput("_fs_common_create_entry_unlocked");
 
-    return create_entry_extended_batch(directory, xname, _fs_common_create_cb_created, _fs_common_create_cb_found, _fs_common_create_cb_error, (void *) &_create_common);
+    if (error==0) error=&dummy;
+    init_create_entry(&ce, xname, NULL, directory, NULL, workspace->context, st, NULL);
 
+    return create_entry_extended_batch(&ce);
 }
 
 void _fs_common_statfs(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, uint64_t blocks, uint64_t bfree, uint64_t bavail, uint32_t bsize)

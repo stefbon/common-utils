@@ -17,8 +17,8 @@
 
 */
 
-#ifndef _COMMON_PATH_CACHING_H
-#define _COMMON_PATH_CACHING_H
+#ifndef SB_COMMON_UTILS_PATH_CACHING_H
+#define SB_COMMON_UTILS_PATH_CACHING_H
 
 #include "entry-management.h"
 

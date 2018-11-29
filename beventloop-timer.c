@@ -17,8 +17,12 @@
 
 */
 
+#ifndef _REENTRANT
 #define _REENTRANT
+#endif
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -73,7 +77,7 @@ static int set_timer(struct beventloop_s *loop)
     if (! loop) loop=get_mainloop();
 
     fd=loop->timer_list.fd;
-    list=loop->timer_list.head;
+    list=loop->timer_list.header.head;
 
     if (list) {
 
@@ -130,26 +134,27 @@ static unsigned char insert_timerentry(struct beventloop_s *loop, struct timeren
     struct list_element_s *list=NULL;
     unsigned char reset=0;
 
-    list=loop->timer_list.head;
+    list=loop->timer_list.header.head;
 
     while (list) {
 
 	timerentry=get_containing_timerentry(list);
 	if (timerentry->expire.tv_sec> new->expire.tv_sec || (timerentry->expire.tv_sec==new->expire.tv_sec && timerentry->expire.tv_nsec> new->expire.tv_nsec)) break;
 
-	list=list->next;
+	list=list->n;
 	timerentry=NULL;
 
     }
 
     if (timerentry) {
 
-	add_list_element_before(&loop->timer_list.head, &loop->timer_list.tail, &new->list, &timerentry->list);
-	reset=(loop->timer_list.head==&new->list) ? 1 : 0;
+	add_list_element_before(&loop->timer_list.header, &new->list, &timerentry->list);
+	/* reset only if the first has been changed */
+	reset=(list_element_is_first(&timerentry->list)==0) ? 1 : 0;
 
     } else {
 
-	add_list_element_last(&loop->timer_list.head, &loop->timer_list.tail, &new->list);
+	add_list_element_last(&loop->timer_list.header, &new->list);
 
     }
 
@@ -157,7 +162,7 @@ static unsigned char insert_timerentry(struct beventloop_s *loop, struct timeren
 
 }
 
-static void dummy_eventcall(void *data)
+static void dummy_eventcall(struct timerid_s *id, struct timespec *t)
 {
 }
 
@@ -180,13 +185,13 @@ static void init_timerentry(struct timerentry_s *timerentry, struct timespec *ex
     }
 
     timerentry->eventcall=dummy_eventcall;
-    timerentry->data=NULL;
-    timerentry->list.next=NULL;
-    timerentry->list.prev=NULL;
+    memset(&timerentry->id, 0, sizeof(struct timerentry_s));
+    timerentry->list.n=NULL;
+    timerentry->list.p=NULL;
 
 }
 
-struct timerentry_s *create_timerentry(struct timespec *expire, void (*cb) (void *data), void *data, struct beventloop_s *loop)
+struct timerentry_s *create_timerentry(struct timespec *expire, void (*cb) (struct timerid_s *id, struct timespec *t), struct timerid_s *id, struct beventloop_s *loop)
 {
     struct timerentry_s *entry=malloc(sizeof(struct timerentry_s));
 
@@ -194,10 +199,11 @@ struct timerentry_s *create_timerentry(struct timespec *expire, void (*cb) (void
 
 	init_timerentry(entry, expire);
 	entry->eventcall=cb;
-	entry->data=data;
 	entry->loop=loop;
 	if (loop==NULL) loop=get_mainloop();
 	entry->status=TIMERENTRY_STATUS_QUEUE;
+
+	memcpy(&entry->id, id, sizeof(struct timerid_s));
 
 	pthread_mutex_lock(&loop->timer_list.mutex);
 	if (insert_timerentry(loop, entry)==1) set_timer(loop);
@@ -225,7 +231,7 @@ static void _run_expired_thread(void *ptr)
 
     /* get the next timer */
 
-    list=loop->timer_list.head;
+    list=loop->timer_list.header.head;
 
     if (! list) {
 
@@ -241,14 +247,14 @@ static void _run_expired_thread(void *ptr)
 
     if (timerentry->expire.tv_sec>rightnow.tv_sec || (timerentry->expire.tv_sec==rightnow.tv_sec && timerentry->expire.tv_nsec>rightnow.tv_nsec)) {
 
-	/* timer is in future */
+	/* timer is in future and since the linked list is ordered we're ready */
 	loop->timer_list.threadid=0;
 	pthread_mutex_unlock(&loop->timer_list.mutex);
 	return;
 
     }
 
-    remove_list_element(&loop->timer_list.head, &loop->timer_list.tail, list);
+    remove_list_element(list);
     pthread_mutex_unlock(&loop->timer_list.mutex);
 
     if (timerentry->status==TIMERENTRY_STATUS_INACTIVE) {
@@ -260,7 +266,7 @@ static void _run_expired_thread(void *ptr)
 
     }
 
-    (* timerentry->eventcall) (timerentry->data);
+    (* timerentry->eventcall) (&timerentry->id, &rightnow);
     free(timerentry);
     timerentry=NULL;
     pthread_mutex_lock(&loop->timer_list.mutex);
@@ -290,8 +296,8 @@ void remove_timerentry(struct timerentry_s *entry)
     entry->status=TIMERENTRY_STATUS_INACTIVE;
 
     pthread_mutex_lock(&timers->mutex);
-    if (&entry->list==timers->head) reset=1;
-    remove_list_element(&timers->head, &timers->tail, &entry->list);
+    if (list_element_is_first(&entry->list)==0) reset=1;
+    remove_list_element(&entry->list);
     if (reset==1) set_timer(loop);
     pthread_mutex_unlock(&timers->mutex);
 }
@@ -302,9 +308,7 @@ static int default_timer_cb(int fd, void *data, uint32_t events)
     uint64_t expirations;
 
     if (read(fd, &expirations, sizeof(uint64_t))>0) (* loop->timer_list.run_expired)(loop);
-
     return 0;
-
 }
 
 int enable_beventloop_timer(struct beventloop_s *loop, unsigned int *error)
@@ -313,17 +317,12 @@ int enable_beventloop_timer(struct beventloop_s *loop, unsigned int *error)
     int fd=0;
 
     if (! loop) loop=get_mainloop();
-
     fd=timerfd_create(CLOCK_REALTIME, TFD_NONBLOCK);
-
     *error=errno;
     if (fd == -1) goto error;
-
     xdata=add_to_beventloop(fd, EPOLLIN, default_timer_cb, NULL, NULL, loop);
-
     *error=errno;
     if ( !xdata ) goto error;
-
     *error=0;
     loop->timer_list.run_expired=run_expired;
     loop->timer_list.fd=fd;

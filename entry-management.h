@@ -17,8 +17,8 @@
 
 */
 
-#ifndef _FUSE_ENTRY_MANAGEMENT_H
-#define _FUSE_ENTRY_MANAGEMENT_H
+#ifndef SB_COMMON_UTILS_ENTRY_MANAGEMENT_H
+#define SB_COMMON_UTILS_ENTRY_MANAGEMENT_H
 
 #include <linux/fuse.h>
 #include "workspace-interface.h"
@@ -42,6 +42,9 @@
 #define INODE_LINK_TYPE_SPECIAL_ENTRY				3
 #define INODE_LINK_TYPE_DATA					4
 #define INODE_LINK_TYPE_DIRECTORY				5
+#define INODE_LINK_TYPE_CACHE					6
+
+#define INODE_FLAG_CACHED					1
 
 #include "skiplist.h"
 
@@ -57,22 +60,16 @@ struct inode_link_s {
 
 struct inode_s {
     unsigned char			flags;
-    uint64_t 				ino;
-    int64_t 				nlookup;
+    uint64_t				nlookup;
     struct inode_s 			*id_next;
     struct inode_s 			*id_prev;
     struct entry_s 			*alias;
-    mode_t				mode;
-    nlink_t				nlink;
-    uid_t				uid;
-    gid_t				gid;
-    off_t				size;
-    struct timespec			mtim;
-    struct timespec			ctim;
-    struct timespec			atim;
+    struct stat				st;
     struct timespec			stim;
     struct fuse_fs_s			*fs;
-    int					(* get_inode_link)(struct inode_s *i, struct inode_link_s *link);
+    struct inode_link_s			link;
+    unsigned int			cache_size;
+    char				cache[];
 };
 
 struct name_s {
@@ -111,18 +108,17 @@ void destroy_entry(struct entry_s *entry);
 void rename_entry(struct entry_s *entry, char **name, unsigned int len);
 
 void init_inode(struct inode_s *inode);
-struct inode_s *create_inode();
+struct inode_s *create_inode(unsigned int s);
 void add_inode_hashtable(struct inode_s *inode, void (*cb) (void *data), void *data);
 
 void fill_inode_stat(struct inode_s *inode, struct stat *st);
 void get_inode_stat(struct inode_s *inode, struct stat *st);
 
+struct inode_s *realloc_inode(struct inode_s *inode, unsigned int new);
+
 struct inode_s *find_inode(uint64_t ino);
 struct inode_s *forget_inode(struct context_interface_s *i, uint64_t ino, uint64_t lookup, void (*cb) (void *data), void *data, unsigned int flags);
 void remove_inode(struct context_interface_s *i, struct inode_s *inode);
-
-void set_inode_link_cb(struct inode_s *inode, int (* get_inode_link_cb)(struct inode_s *i, struct inode_link_s *link));
-void reset_inode_link_cb(struct inode_s *inode);
 
 #define INODE_INFORMATION_OWNER						(1 << 0)
 #define INODE_INFORMATION_GROUP						(1 << 1)

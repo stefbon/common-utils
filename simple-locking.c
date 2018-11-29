@@ -29,7 +29,7 @@
 #include <pthread.h>
 #include "simple-list.h"
 #include "simple-locking.h"
-#define LOGGING
+#undef LOGGING
 #include "logging.h"
 
 
@@ -37,10 +37,8 @@ int init_simple_locking(struct simple_locking_s *locking)
 {
     pthread_mutex_init(&locking->mutex, NULL);
     pthread_cond_init(&locking->cond, NULL);
-    locking->readlocks.head=NULL;
-    locking->readlocks.tail=NULL;
-    locking->writelocks.head=NULL;
-    locking->writelocks.tail=NULL;
+    init_list_header(&locking->readlocks, SIMPLE_LIST_TYPE_EMPTY, NULL);
+    init_list_header(&locking->writelocks, SIMPLE_LIST_TYPE_EMPTY, NULL);
     locking->readers=0;
     locking->writers=0;
     return 0;
@@ -50,23 +48,23 @@ void clear_simple_locking(struct simple_locking_s *locking)
 {
     pthread_mutex_destroy(&locking->mutex);
     pthread_cond_destroy(&locking->cond);
-    struct list_element_s *list=get_list_head(&locking->readlocks.head, &locking->readlocks.tail);
+    struct list_element_s *list=get_list_head(&locking->readlocks, SIMPLE_LIST_FLAG_REMOVE);
 
     while (list) {
 	struct simple_lock_s *lock=(struct simple_lock_s *) (((char *) list) - offsetof(struct simple_lock_s, list));
 
 	free(lock);
-	list=get_list_head(&locking->readlocks.head, &locking->readlocks.tail);
+	list=get_list_head(&locking->readlocks, SIMPLE_LIST_FLAG_REMOVE);
 
     }
 
-    list=get_list_head(&locking->writelocks.head, &locking->writelocks.tail);
+    list=get_list_head(&locking->writelocks, SIMPLE_LIST_FLAG_REMOVE);
 
     while (list) {
 	struct simple_lock_s *lock=(struct simple_lock_s *) (((char *) list) - offsetof(struct simple_lock_s, list));
 
 	free(lock);
-	list=get_list_head(&locking->writelocks.head, &locking->writelocks.tail);
+	list=get_list_head(&locking->writelocks, SIMPLE_LIST_FLAG_REMOVE);
 
     }
 
@@ -116,7 +114,7 @@ static int _simple_readlock(struct simple_lock_s *rlock)
 	rlock->flags|=SIMPLE_LOCK_FLAG_WAITING;
 	while (locking->writers>0) pthread_cond_wait(&locking->cond, &locking->mutex);
 	rlock->flags-=SIMPLE_LOCK_FLAG_WAITING;
-	add_list_element_last(&locking->readlocks.head, &locking->readlocks.tail, &rlock->list);
+	add_list_element_last(&locking->readlocks, &rlock->list);
 	rlock->flags|=SIMPLE_LOCK_FLAG_LIST;
 	locking->readers++;
 
@@ -139,7 +137,7 @@ static int _simple_readunlock(struct simple_lock_s *rlock)
 
     if (rlock->flags & SIMPLE_LOCK_FLAG_LIST) {
 
-	remove_list_element(&locking->readlocks.head, &locking->readlocks.tail, &rlock->list);
+	remove_list_element(&rlock->list);
 	rlock->flags -= SIMPLE_LOCK_FLAG_LIST;
 	locking->readers--;
 	pthread_cond_broadcast(&locking->cond);
@@ -166,7 +164,7 @@ static int _simple_writelock(struct simple_lock_s *wlock)
 
     if ((wlock->flags & SIMPLE_LOCK_FLAG_LIST)==0) {
 
-	add_list_element_last(&locking->writelocks.head, &locking->writelocks.tail, &wlock->list);
+	add_list_element_last(&locking->writelocks, &wlock->list);
 	locking->writers++;
 	wlock->flags |= SIMPLE_LOCK_FLAG_LIST;
 
@@ -195,10 +193,8 @@ static int _simple_writeunlock(struct simple_lock_s *wlock)
     if (wlock->flags & SIMPLE_LOCK_FLAG_LIST) {
 
 	pthread_mutex_lock(&locking->mutex);
-
-	remove_list_element(&locking->writelocks.head, &locking->writelocks.tail, &wlock->list);
+	remove_list_element(&wlock->list);
 	locking->writers--;
-
 	pthread_cond_broadcast(&locking->cond);
 	pthread_mutex_unlock(&locking->mutex);
 
@@ -231,10 +227,8 @@ static int _simple_prewritelock(struct simple_lock_s *wlock)
     if ((wlock->flags & SIMPLE_LOCK_FLAG_LIST)==0) {
 
 	pthread_mutex_lock(&locking->mutex);
-
-	add_list_element_last(&locking->writelocks.head, &locking->writelocks.tail, &wlock->list);
+	add_list_element_last(&locking->writelocks, &wlock->list);
 	locking->writers++;
-
 	pthread_mutex_unlock(&locking->mutex);
 
 	wlock->flags |= SIMPLE_LOCK_FLAG_LIST;
@@ -255,12 +249,12 @@ static int _simple_upgrade_readlock(struct simple_lock_s *rlock)
 
     if (rlock->flags & SIMPLE_LOCK_FLAG_LIST) {
 
-	remove_list_element(&locking->readlocks.head, &locking->readlocks.tail, &rlock->list);
+	remove_list_element(&rlock->list);
 	locking->readers--;
 
     }
 
-    add_list_element_first(&locking->writelocks.head, &locking->writelocks.tail, &rlock->list);
+    add_list_element_first(&locking->writelocks, &rlock->list);
     locking->writers++;
 
     rlock->type=SIMPLE_LOCK_TYPE_WRITE;
@@ -288,12 +282,12 @@ static int _simple_prereadlock(struct simple_lock_s *rlock)
 
     if (rlock->flags & SIMPLE_LOCK_FLAG_LIST) {
 
-	remove_list_element(&locking->readlocks.head, &locking->readlocks.tail, &rlock->list);
+	remove_list_element(&rlock->list);
 	locking->readers--;
 
     }
 
-    add_list_element_first(&locking->writelocks.head, &locking->writelocks.tail, &rlock->list);
+    add_list_element_first(&locking->writelocks, &rlock->list);
     locking->writers++;
     rlock->type=SIMPLE_LOCK_TYPE_WRITE;
     rlock->lock=_simple_writelock;
@@ -309,8 +303,7 @@ void init_simple_nonelock(struct simple_locking_s *locking, struct simple_lock_s
 
     lock->type=SIMPLE_LOCK_TYPE_NONE;
     lock->thread=0;
-    lock->list.next=NULL;
-    lock->list.prev=NULL;
+    init_list_element(&lock->list, NULL);
     lock->flags=0;
     lock->locking=locking;
     lock->lock=_simple_nonelock;
@@ -325,8 +318,7 @@ void init_simple_readlock(struct simple_locking_s *locking, struct simple_lock_s
 
     rlock->type=SIMPLE_LOCK_TYPE_READ;
     rlock->thread=0;
-    rlock->list.next=NULL;
-    rlock->list.prev=NULL;
+    init_list_element(&rlock->list, NULL);
     rlock->flags=0;
     rlock->locking=locking;
     rlock->lock=_simple_readlock;
@@ -341,8 +333,7 @@ void init_simple_writelock(struct simple_locking_s *locking, struct simple_lock_
 
     wlock->type=SIMPLE_LOCK_TYPE_WRITE;
     wlock->thread=0;
-    wlock->list.next=NULL;
-    wlock->list.prev=NULL;
+    init_list_element(&wlock->list, NULL);
     wlock->flags=0;
     wlock->locking=locking;
     wlock->lock=_simple_writelock;

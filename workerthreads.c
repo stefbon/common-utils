@@ -37,15 +37,11 @@
 #include <sys/wait.h>
 
 #include <pthread.h>
+#undef LOGGING
 #include "logging.h"
 #include "utils.h"
 #include "simple-list.h"
 #include "workerthreads.h"
-
-struct list_head_s {
-    struct list_element_s				*head;
-    struct list_element_s				*tail;
-};
 
 struct threadjob_s {
     void 						(*cb) (void *data);
@@ -61,9 +57,9 @@ struct workerthread_s {
 };
 
 struct workerthreads_queue_s {
-    struct list_head_s 					threads;
+    struct list_header_s 				threads;
     struct list_element_s 				*current;
-    struct list_head_s					joblist;
+    struct list_header_s				joblist;
     pthread_mutex_t 					mutex;
     pthread_cond_t 					cond;
     unsigned int 					nrthreads;
@@ -88,32 +84,13 @@ static struct threadjob_s *get_containing_job(struct list_element_s *list)
 
 static struct threadjob_s *get_next_job(struct workerthreads_queue_s *queue)
 {
-    struct list_head_s *jobs=&queue->joblist;
+    struct list_header_s *jobs=&queue->joblist;
+    struct list_element_s *list=NULL;
 
     /* get job from joblist for this workerthreads queue */
 
-    if (jobs->head) {
-	struct threadjob_s *job=get_containing_job(jobs->head);
-
-	jobs->head=job->list.next;
-
-	if (jobs->head) {
-	    struct list_element_s *next=jobs->head;
-
-	    next->prev=NULL;
-
-	} else {
-
-	    jobs->tail=NULL;
-
-	}
-
-	job->list.next=NULL;
-	return job;
-
-    }
-
-    return NULL;
+    list=get_list_head(jobs, SIMPLE_LIST_FLAG_REMOVE);
+    return (list) ? get_containing_job(list) : NULL;
 }
 
 static void process_job(void *threadarg)
@@ -122,13 +99,13 @@ static void process_job(void *threadarg)
     struct workerthreads_queue_s *queue=NULL;
     struct threadjob_s *threadjob=NULL;
 
+    // logoutput("process_job: started %i", gettid());
+
     thread=(struct workerthread_s *) threadarg;
     if ( ! thread ) return;
 
     queue=thread->queue;
     thread->threadid=pthread_self();
-
-    logoutput("process_job: started %i", gettid());
 
     /* thread can be cancelled any time */
 
@@ -147,13 +124,15 @@ static void process_job(void *threadarg)
 
 	}
 
-	if (queue->finish==1 && ! thread->job) {
+	// logoutput("process_job: thread %i waking up", gettid());
+
+	if (queue->finish==1 && thread->job==NULL) {
 
 	    /* finish every thread */
 
 	    thread->threadid=0;
 	    queue->nrthreads--;
-	    remove_list_element(&queue->threads.head, &queue->threads.tail, &thread->list);
+	    remove_list_element(&thread->list);
 	    pthread_cond_broadcast(&queue->cond);
 	    pthread_mutex_unlock(&queue->mutex);
 	    free(thread);
@@ -170,6 +149,8 @@ static void process_job(void *threadarg)
 
 	processjob:
 
+	// logoutput("process_job: A");
+
 	(* threadjob->cb) (threadjob->data);
 
 	free(threadjob);
@@ -180,6 +161,8 @@ static void process_job(void *threadarg)
 	    - move to tail of queue */
 
 	pthread_mutex_lock(&queue->mutex);
+
+	// logoutput("process_job: B");
 
 	threadjob=get_next_job(queue);
 	if (threadjob) {
@@ -207,42 +190,23 @@ static void process_job(void *threadarg)
 
 	*/
 
-	if (queue->threads.tail == &thread->list) {
+	// logoutput("process_job: C");
 
+	if (list_element_is_last(&thread->list)==0) {
+
+	    // logoutput("process_job: D1");
 	    queue->current=&thread->list;
 
 	} else {
-	    struct list_element_s *prev=NULL;
 
 	    /* not already latest
 		move to the latest position */
 
-	    if (queue->threads.head==&thread->list) {
-		struct list_element_s *next=thread->list.next;
+	    // logoutput("process_job: D2");
 
-		queue->threads.head=next;
-		next->prev=NULL; /* there is **always** a next since thread is not the latest */
-
-	    } else {
-		struct list_element_s *next=thread->list.next;
-
-		prev=thread->list.prev;
-		prev->next=next; /* there is **always** a prev since thread is not the first */
-		next->prev=prev; /* there is **always** a next since thread is not the latest */
-
-	    }
-
-	    thread->list.next=NULL;
-	    thread->list.prev=NULL;
-
-	    /* append after latest */
-
-	    prev=queue->threads.tail;
-	    prev->next=&thread->list;
-	    thread->list.prev=prev;
-	    queue->threads.tail=&thread->list;
-
-	    if (!queue->current) queue->current=&thread->list;
+	    remove_list_element(&thread->list);
+	    add_list_element_last(&queue->threads, &thread->list);
+	    if (queue->current==NULL) queue->current=&thread->list;
 
 	}
 
@@ -257,6 +221,8 @@ static struct workerthread_s *create_workerthread(struct workerthreads_queue_s *
 {
     struct workerthread_s *thread=NULL;
 
+    logoutput("create_workerthread");
+
     thread=malloc(sizeof(struct workerthread_s));
 
     if (thread) {
@@ -264,8 +230,7 @@ static struct workerthread_s *create_workerthread(struct workerthreads_queue_s *
 
 	thread->threadid=0;
 	thread->queue=queue;
-	thread->list.next=NULL;
-	thread->list.prev=NULL;
+	init_list_element(&thread->list, NULL);
 	thread->job=NULL;
 
 	result=pthread_create(&thread->threadid, NULL, (void *) process_job, (void *) thread);
@@ -282,6 +247,7 @@ static struct workerthread_s *create_workerthread(struct workerthreads_queue_s *
 
     } else {
 
+	logoutput("create_workerthread: error %i:%s starting thread", ENOMEM, strerror(ENOMEM));
 	*error=ENOMEM;
 
     }
@@ -292,11 +258,13 @@ static struct workerthread_s *create_workerthread(struct workerthreads_queue_s *
 
 void work_workerthread(void *ptr, int timeout, void (*cb) (void *data), void *data, unsigned int *error)
 {
-    struct workerthreads_queue_s *queue=(struct workerthreads_queue_s *) ptr;
+    struct workerthreads_queue_s *queue=NULL;
     struct threadjob_s *job=NULL;
-    struct list_head_s *joblist=NULL;
+    struct list_header_s *joblist=NULL;
 
-    if (queue==NULL) queue=&default_queue;
+    // logoutput("work_workerthread");
+
+    queue=(ptr) ? (struct workerthreads_queue_s *) ptr : &default_queue;
     joblist=&queue->joblist;
 
     pthread_mutex_lock(&queue->mutex);
@@ -322,8 +290,7 @@ void work_workerthread(void *ptr, int timeout, void (*cb) (void *data), void *da
 
     job->cb=cb;
     job->data=data;
-    job->list.next=NULL;
-    job->list.prev=NULL;
+    init_list_element(&job->list, NULL);
 
     pthread_mutex_lock(&queue->mutex);
 
@@ -334,12 +301,17 @@ void work_workerthread(void *ptr, int timeout, void (*cb) (void *data), void *da
     if (queue->current) {
 	struct workerthread_s *thread=NULL;
 
+	// logoutput("work_workerthread: get thread from stack");
+
 	thread=get_containing_thread(queue->current);
 	thread->job=job;
-	queue->current=thread->list.next;
+	queue->current=get_next_element(&thread->list);
 
 	pthread_cond_broadcast(&queue->cond);
 	pthread_mutex_unlock(&queue->mutex);
+
+	// logoutput("work_workerthread: gtfs ready");
+
 	return;
 
     }
@@ -349,56 +321,43 @@ void work_workerthread(void *ptr, int timeout, void (*cb) (void *data), void *da
     if (queue->nrthreads<queue->max_nrthreads) {
 	struct workerthread_s *thread=NULL;
 
-	*error=0;
+	// logoutput("work_workerthread: create thread");
 
+	*error=0;
 	thread=create_workerthread(queue, error);
 
-	if (!thread) {
+	if (thread==NULL) {
 
-	    logoutput("work_workerthread: unable to create new thread");
+	    // logoutput("work_workerthread: unable to create new thread");
 	    return;
 
 	}
 
-	if (queue->threads.tail) {
-	    struct workerthread_s *prev=get_containing_thread(queue->threads.tail);
+	// logoutput("work_workerthread: A");
 
-	    prev->list.next=&thread->list;
-	    thread->list.prev=&prev->list;
-	    queue->threads.tail=&thread->list;
+	add_list_element_last(&queue->threads, &thread->list);
 
-	} else {
-
-	    queue->threads.head=&thread->list;
-	    queue->threads.tail=&thread->list;
-
-	}
+	// logoutput("work_workerthread: B");
 
 	thread->job=job;
 	queue->nrthreads++;
 
+	// logoutput("work_workerthread: C");
+
 	pthread_cond_broadcast(&queue->cond);
 	pthread_mutex_unlock(&queue->mutex);
+
+	// logoutput("work_workerthread: D");
+
 	return;
 
     }
 
     /* maximum number of threads: put job on queue */
 
-    if (joblist->tail) {
-	struct threadjob_s *prev=get_containing_job(joblist->tail);
+    // logoutput("work_workerthread: put job on list");
 
-	prev->list.next=&job->list;
-	job->list.prev=&prev->list;
-
-	joblist->tail=&job->list;
-
-    } else {
-
-	joblist->head=&job->list;
-	joblist->tail=&job->list;
-
-    }
+    add_list_element_last(joblist, &job->list);
 
     pthread_cond_broadcast(&queue->cond);
     pthread_mutex_unlock(&queue->mutex);
@@ -407,19 +366,15 @@ void work_workerthread(void *ptr, int timeout, void (*cb) (void *data), void *da
 
 void init_workerthreads(void *ptr)
 {
-    struct workerthreads_queue_s *queue=(struct workerthreads_queue_s *) ptr;
-
-    if (queue==NULL) queue=&default_queue;
+    struct workerthreads_queue_s *queue=(ptr) ? (struct workerthreads_queue_s *) ptr : &default_queue;
 
     pthread_mutex_init(&queue->mutex, NULL);
     pthread_cond_init(&queue->cond, NULL);
 
-    queue->threads.head=NULL;
-    queue->threads.tail=NULL;
+    init_list_header(&queue->threads, SIMPLE_LIST_TYPE_EMPTY, NULL);
     queue->current=NULL;
 
-    queue->joblist.head=NULL;
-    queue->joblist.tail=NULL;
+    init_list_header(&queue->joblist, SIMPLE_LIST_TYPE_EMPTY, NULL);
 
     queue->nrthreads=0;
     queue->max_nrthreads=6;
@@ -441,32 +396,27 @@ void stop_workerthreads(void *ptr)
 
 static void cancel_workerthreads(struct workerthreads_queue_s *queue)
 {
+    struct list_element_s *list;
 
     getthread:
 
     pthread_mutex_lock(&queue->mutex);
 
-    if (queue->threads.head) {
+    list=get_list_head(&queue->threads, SIMPLE_LIST_FLAG_REMOVE);
+
+    if (list) {
 	struct workerthread_s *thread=NULL;
-	struct list_element_s *list;
 
-	list=queue->threads.head;
+	thread=get_containing_thread(list);
 
-	if (list) {
+	if (thread->threadid>0) {
 
-	    remove_list_element(&queue->threads.head, &queue->threads.tail, list);
-	    thread=get_containing_thread(list);
-
-	    if (thread->threadid>0) {
-
-		pthread_cancel(thread->threadid);
-		thread->threadid=0;
-
-	    }
-
-	    free(thread);
+	    pthread_cancel(thread->threadid);
+	    thread->threadid=0;
 
 	}
+
+	free(thread);
 
 	pthread_mutex_unlock(&queue->mutex);
 	goto getthread;
@@ -536,7 +486,6 @@ void terminate_workerthreads(void *ptr, unsigned int timeout)
     }
 
     pthread_mutex_unlock(&queue->mutex);
-
     cancel_workerthreads(queue);
 
     finish:
@@ -560,23 +509,39 @@ void terminate_workerthreads(void *ptr, unsigned int timeout)
 
 void set_max_numberthreads(void *ptr, unsigned maxnr)
 {
-    struct workerthreads_queue_s *queue=(struct workerthreads_queue_s *) ptr;
-    if (queue==NULL) queue=&default_queue;
+    struct workerthreads_queue_s *queue=(ptr) ? (struct workerthreads_queue_s *) ptr : &default_queue;
+
     pthread_mutex_lock(&queue->mutex);
     queue->max_nrthreads=maxnr;
     pthread_mutex_unlock(&queue->mutex);
+
 }
 
 unsigned get_numberthreads(void *ptr)
 {
-    struct workerthreads_queue_s *queue=(struct workerthreads_queue_s *) ptr;
-    if (queue==NULL) queue=&default_queue;
+    struct workerthreads_queue_s *queue=(ptr) ? (struct workerthreads_queue_s *) ptr : &default_queue;
     return queue->nrthreads;
 }
 
 unsigned get_max_numberthreads(void *ptr)
 {
-    struct workerthreads_queue_s *queue=(struct workerthreads_queue_s *) ptr;
-    if (queue==NULL) queue=&default_queue;
+    struct workerthreads_queue_s *queue=(ptr) ? (struct workerthreads_queue_s *) ptr : &default_queue;
     return queue->max_nrthreads;
+}
+
+static void start_workerthread_log(void *ptr)
+{
+}
+
+void start_default_workerthreads(void *ptr)
+{
+    struct workerthreads_queue_s *queue=(ptr) ? (struct workerthreads_queue_s *) ptr : &default_queue;
+    unsigned int error=0;
+
+    for (unsigned int i=0; i<queue->max_nrthreads; i++) {
+
+	work_workerthread(ptr, 0, start_workerthread_log, NULL, &error);
+
+    }
+
 }

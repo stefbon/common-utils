@@ -17,8 +17,8 @@
   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
-#ifndef GENERAL_SIMPLE_HASH_H
-#define GENERAL_SIMPLE_HASH_H
+#ifndef SB_COMMON_UTILS_SIMPLE_HASH_H
+#define SB_COMMON_UTILS_SIMPLE_HASH_H
 
 #include "simple-list.h"
 #include "simple-locking.h"
@@ -29,21 +29,16 @@ struct hash_element_s {
     struct list_element_s 	list;
 };
 
-struct hash_head_s {
-    struct list_element_s 	*head;
-    struct list_element_s 	*tail;
-};
-
 /* TODO: add "add", "remove" and "lookup" functions as cb */
 
 struct simple_hash_s {
     struct simple_locking_s	locking;
     unsigned int 		(*hashfunction) (void *data);
     int 			len;
-    struct hash_head_s 		*hash;
+    struct list_header_s 	*hash;
 };
 
-/* prototypes */
+/*1 prototypes */
 
 int initialize_group(struct simple_hash_s *group, unsigned int (*hashfunction) (void *data), unsigned int len, unsigned int *error);
 void free_group(struct simple_hash_s *group, void (*free_data) (void *data));

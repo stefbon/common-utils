@@ -17,8 +17,8 @@
 
 */
 
-#ifndef FUSE_INTERFACE_H
-#define FUSE_INTERFACE_H
+#ifndef SB_COMMON_UTILS_FUSE_INTERFACE_H
+#define SB_COMMON_UTILS_FUSE_INTERFACE_H
 
 #include "linux/fuse.h"
 

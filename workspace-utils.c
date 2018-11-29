@@ -47,6 +47,7 @@
 #include "fuse-fs.h"
 #include "workspaces.h"
 
+#undef LOGGING
 #include "logging.h"
 
 static struct workspace_base_s *base_list=NULL;

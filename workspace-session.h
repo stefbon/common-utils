@@ -17,8 +17,8 @@
 
 */
 
-#ifndef FS_WORKSPACE_SESSION_H
-#define FS_WORKSPACE_SESSION_H
+#ifndef SB_COMMON_UTILS_WORKSPACE_SESSION_H
+#define SB_COMMON_UTILS_WORKSPACE_SESSION_H
 
 #include "simple-hash.h"
 

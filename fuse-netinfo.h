@@ -17,8 +17,8 @@
 
 */
 
-#ifndef FUSE_NETINFO_H
-#define FUSE_NETINFO_H
+#ifndef SB_COMMON_UTILS_FUSE_NETINFO_H
+#define SB_COMMON_UTILS_FUSE_NETINFO_H
 
 #include "simple-hash.h"
 

@@ -17,8 +17,8 @@
 
 */
 
-#ifndef FUSE_FS_CALLS_H
-#define FUSE_FS_CALLS_H
+#ifndef SB_COMMON_UTILS_FS_CALLS_H
+#define SB_COMMON_UTILS_FS_CALLS_H
 
 #include <fcntl.h>
 
@@ -55,8 +55,8 @@ struct fuse_opendir_s {
     struct entry_s				*entry;
     unsigned char				mode;
     unsigned int 				error;
-    unsigned int				created;
-    unsigned int				count;
+    unsigned int				count_created;
+    unsigned int				count_found;
     void 					(*readdir) (struct fuse_opendir_s *opendir, struct fuse_request_s *request, size_t size, off_t offset);
     void 					(*readdirplus) (struct fuse_opendir_s *opendir, struct fuse_request_s *request, size_t size, off_t offset);
     void 					(*releasedir) (struct fuse_opendir_s *opendir, struct fuse_request_s *request);
@@ -72,10 +72,22 @@ struct fuse_opendir_s {
     void					*data;
 };
 
+/* union of fs calls. types:
+    - dir
+    - nondir
+
+    better:
+    - dir
+    - file
+    - symlink
+    ??
+
+    TODO?
+    */
+
 struct fuse_fs_s {
 
     unsigned int flags;
-    unsigned char (*get_count) ();
 
     int (*lock_datalink)(struct inode_s *inode);
     int (*unlock_datalink)(struct inode_s *inode);
@@ -151,10 +163,10 @@ struct fuse_fs_s {
 void copy_fuse_fs(struct fuse_fs_s *to, struct fuse_fs_s *from);
 unsigned char fuse_request_interrupted(struct fuse_request_s *request);
 
-unsigned char get_fs_count(struct inode_s *inode);
-
 int fs_lock_datalink(struct inode_s *inode);
 int fs_unlock_datalink(struct inode_s *inode);
+
+int fs_get_inode_link(struct inode_s *inode, struct inode_link_s *link);
 
 void fuse_fs_forget(struct fuse_request_s *request);
 void fuse_fs_forget_multi(struct fuse_request_s *request);

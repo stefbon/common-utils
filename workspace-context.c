@@ -43,17 +43,17 @@
 
 #include "workerthreads.h"
 #include "pathinfo.h"
+#include "utils.h"
 #include "entry-management.h"
 #include "directory-management.h"
 #include "entry-utils.h"
-#include "utils.h"
-
 #include "beventloop.h"
 #include "beventloop-xdata.h"
 #include "fuse-interface.h"
 #include "fuse-fs.h"
 #include "workspaces.h"
 
+#undef LOGGING
 #include "logging.h"
 
 struct service_context_s *get_service_context(struct context_interface_s *interface)
@@ -72,7 +72,7 @@ struct bevent_xdata_s *add_context_eventloop(struct context_interface_s *interfa
 
     if (xdata) {
 
-	set_bevent_name(xdata, (char *) name, error);
+	if (name) set_bevent_name(xdata, (char *) name, error);
 
     } else {
 
@@ -121,53 +121,64 @@ static struct context_interface_s *get_parent_dummy(struct context_interface_s *
     return NULL;
 }
 
-static unsigned int get_interface_option_dummy(void *ptr, const char *name, struct context_option_s *option)
+static unsigned int get_interface_option_dummy(struct context_interface_s *interface, const char *name, struct context_option_s *option)
 {
     return 0;
 }
 
-static unsigned int get_interface_info_dummy(struct context_interface_s *interface, const char *what, void *data, unsigned char *buffer, unsigned int len, unsigned int *error)
+static unsigned int get_interface_info_dummy(struct context_interface_s *interface, const char *what, void *data, struct common_buffer_s *buffer)
 {
     return 0;
+}
+
+void init_service_context(struct service_context_s *context, unsigned char type, char *name)
+{
+    memset(context, 0, sizeof(struct service_context_s));
+
+    context->flags=0;
+    context->type=0;
+    memset(context->name, '\0', sizeof(context->name));
+    if (name) strncpy(context->name, name, sizeof(context->name));
+    context->fscount=0;
+    context->serviceid=0;
+    context->fs=NULL;
+    context->inode=NULL;
+    context->workspace=NULL;
+    init_xdata(&context->xdata);
+    context->error=0;
+    context->refcount=0;
+    init_list_element(&context->list, NULL);
+    context->parent=NULL;
+
+    context->interface.ptr=NULL;
+    context->interface.data=NULL;
+    context->interface.connect=connect_dummy;
+    context->interface.start=start_dummy;
+    context->interface.disconnect=dummy_call;
+    context->interface.free=dummy_call;
+    context->interface.get_parent=get_parent_dummy;
+    context->interface.add_context_eventloop=add_context_eventloop;
+    context->interface.get_interface_option=get_interface_option_dummy;
+    context->interface.get_interface_info=get_interface_info_dummy;
 }
 
 struct service_context_s *create_service_context(struct workspace_mount_s *workspace, unsigned char type)
 {
     struct service_context_s *context=NULL;
 
+    logoutput("create_service_context");
+
     context=malloc(sizeof(struct service_context_s));
 
     if (context) {
 
-	memset(context, 0, sizeof(struct service_context_s));
+	init_service_context(context, type, NULL);
+	if (workspace) {
 
-	context->flags=0;
-	context->type=type;
-	memset(context->name, '\0', sizeof(context->name));
-	context->fscount=0;
-	context->serviceid=0;
-	context->fs=NULL;
-	context->inode=NULL;
-	context->workspace=workspace;
-	init_xdata(&context->xdata);
-	context->error=0;
-	context->refcount=0;
-	context->list.next=NULL;
-	context->list.prev=NULL;
-	context->parent=NULL;
+	    context->workspace=workspace;
+	    add_list_element_last(&workspace->contexes, &context->list);
 
-	context->interface.ptr=NULL;
-	context->interface.data=NULL;
-	context->interface.connect=connect_dummy;
-	context->interface.start=start_dummy;
-	context->interface.disconnect=dummy_call;
-	context->interface.free=dummy_call;
-	context->interface.get_parent=get_parent_dummy;
-	context->interface.add_context_eventloop=add_context_eventloop;
-	context->interface.get_interface_option=get_interface_option_dummy;
-	context->interface.get_interface_info=get_interface_info_dummy;
-
-	if (workspace) add_list_element_last(&workspace->contexes.head, &workspace->contexes.tail, &context->list);
+	}
 
     }
 
@@ -228,18 +239,21 @@ struct beventloop_s *get_beventloop_ctx(void *ctx)
     return root_context->xdata.loop;
 }
 
-unsigned char get_context_fs_count(struct context_interface_s *interface)
-{
-    struct service_context_s *context=get_service_context(interface);
-    return get_workspace_fs_count(context->workspace);
-}
-
 void add_inode_context(struct service_context_s *context, struct inode_s *inode)
 {
     struct entry_s *parent=inode->alias->parent;
     struct inode_s *parent_inode=parent->inode;
 
     add_inode_hashtable(inode, increase_inodes_workspace, (void *) context->workspace);
+    // logoutput("add_inode_context: parent inode %s", (parent_inode) ? "defined" : "notdefined");
+
+    // if (parent_inode) {
+
+	// logoutput("add_inode_context: p ino %li flags %i", (long) parent_inode->ino, parent_inode->fs->flags);
+	// logoutput("add_inode_context: use fs %s", (parent_inode->fs->type.dir.use_fs) ? "defined" : "notdefined");
+
+    // }
+
     (* parent_inode->fs->type.dir.use_fs)(context, inode);
 
 }
@@ -249,8 +263,50 @@ struct service_context_s *get_container_context(struct list_element_s *list)
     return (list) ? (struct service_context_s *) ( ((char *) list) - offsetof(struct service_context_s, list)) : NULL;
 }
 
-struct inode_link_s *get_inode_link_context(struct inode_s *inode, struct inode_link_s *link)
+struct inode_link_s *get_inode_link(struct inode_s *inode, struct inode_link_s *link)
 {
-    link->type=INODE_LINK_TYPE_CONTEXT;
-    return get_inode_link_directory(inode, link);
+    memcpy(link, &inode->link, sizeof(struct inode_link_s));
+    return link;
+}
+
+void set_inode_link(struct inode_s *inode, unsigned int type, void *ptr)
+{
+    inode->link.type=type;
+    inode->link.link.ptr=ptr;
+}
+
+void translate_context_host_address(struct host_address_s *host, char **target)
+{
+    if (target) {
+
+	if (strlen(host->hostname)>0) {
+
+	    *target=host->hostname;
+
+	} else {
+
+	    if (host->ip.type==IP_ADDRESS_TYPE_IPv4) {
+
+		*target=host->ip.ip.v4;
+
+	    } else if (host->ip.type==IP_ADDRESS_TYPE_IPv6) {
+
+		*target=host->ip.ip.v6;
+
+	    }
+
+	}
+
+    }
+}
+
+void translate_context_network_port(struct service_address_s *service, unsigned int *port)
+{
+    if (port) *port=service->target.port.port;
+}
+
+void translate_context_address_network(struct context_address_s *address, char **target, unsigned int *port)
+{
+    translate_context_host_address(&address->network.target.host, target);
+    translate_context_network_port(&address->service, port);
 }

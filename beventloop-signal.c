@@ -17,8 +17,12 @@
 
 */
 
+#ifndef _REENTRANT
 #define _REENTRANT
+#endif
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -79,11 +83,13 @@ static int read_signal_eventloop(int fd, void *data, uint32_t events)
     struct signalfd_siginfo fdsi;
     ssize_t len=0;
 
+    logoutput("read_signal_eventloop");
+
     len=read(fd, &fdsi, sizeof(struct signalfd_siginfo));
 
     if (len == sizeof(struct signalfd_siginfo)) {
 
-	logoutput("eventloop: caught signal %i", fdsi.ssi_signo);
+	logoutput("read_signal_eventloop: caught signal %i", fdsi.ssi_signo);
 
 	(* xdata->loop->cb_signal) (xdata->loop, xdata->data, &fdsi);
 	return (int)len;

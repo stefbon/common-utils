@@ -43,6 +43,8 @@
 #define LOGGING
 #include "logging.h"
 
+#include "network-utils.h"
+
 unsigned char check_family_ip_address(char *address, const char *what)
 {
     if (strcmp(what, "ipv4")==0) {
@@ -120,6 +122,8 @@ char *get_connection_hostname(unsigned int fd, unsigned char what, unsigned int 
 
     if (what==0) {
 
+	logoutput("get_connection_hostname: fd=%i local name", fd);
+
 	if (getsockname(fd, &addr, &len)==-1) {
 
 	    *error=errno;
@@ -128,6 +132,8 @@ char *get_connection_hostname(unsigned int fd, unsigned char what, unsigned int 
 	}
 
     } else {
+
+	logoutput("get_connection_hostname: fd=%i remote name", fd);
 
 	if (getpeername(fd, &addr, &len)==-1) {
 
@@ -253,5 +259,75 @@ int read_fd_msg(struct msghdr *message)
     }
 
     return fd;
+
+}
+
+int set_host_address(struct host_address_s *a, char *hostname, char *ipv4, char *ipv6)
+{
+
+    if (hostname && strlen(hostname)>0) {
+	unsigned int len=strlen(hostname);
+
+	memset(a->hostname, '\0', NI_MAXHOST + 1);
+
+	if (len>NI_MAXHOST) len=NI_MAXHOST;
+	memcpy(a->hostname, hostname, len);
+	return 0;
+
+    }
+
+    if (ipv4 && strlen(ipv4)>0) {
+
+	memset(a->ip.ip.v4, '\0', INET_ADDRSTRLEN + 1);
+
+	if (strlen(ipv4) <=INET_ADDRSTRLEN) {
+
+	    strcpy(a->ip.ip.v4, ipv4);
+	    a->ip.type=IP_ADDRESS_TYPE_IPv4;
+	    return 0;
+
+	}
+
+    }
+
+    if (ipv6) {
+
+	memset(a->ip.ip.v6, '\0', INET6_ADDRSTRLEN + 1);
+
+	if (strlen(ipv6)<=INET6_ADDRSTRLEN) {
+
+	    strcpy(a->ip.ip.v6, ipv6);
+	    a->ip.type=IP_ADDRESS_TYPE_IPv6;
+	    return 0;
+
+	}
+
+    }
+
+    return -1;
+}
+
+int compare_network_address(struct host_address_s *a, struct host_address_s *b)
+{
+
+    if (strlen(a->hostname)>0 && strlen(b->hostname)>0) {
+
+	if (strcmp(a->hostname, b->hostname)==0) return 0;
+
+    }
+
+    if (a->ip.type==IP_ADDRESS_TYPE_IPv4 && b->ip.type==IP_ADDRESS_TYPE_IPv4) {
+
+	if (strcmp(a->ip.ip.v4, b->ip.ip.v4)==0) return 0;
+
+    }
+
+    if (a->ip.type==IP_ADDRESS_TYPE_IPv6 && b->ip.type==IP_ADDRESS_TYPE_IPv6) {
+
+	if (strcmp(a->ip.ip.v6, b->ip.ip.v6)==0) return 0;
+
+    }
+
+    return -1;
 
 }

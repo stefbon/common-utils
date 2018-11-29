@@ -42,6 +42,7 @@
 #include "logging.h"
 
 #include "pathinfo.h"
+#include "utils.h"
 #include "entry-management.h"
 #include "directory-management.h"
 #include "entry-utils.h"
@@ -86,6 +87,8 @@ int get_service_path_default(struct inode_s *inode, struct fuse_path_s *fpath)
     struct name_s *xname=NULL;
     struct inode_link_s link;
 
+    logoutput("get_service_path_default");
+
     appendname:
 
     xname=&entry->name;
@@ -102,7 +105,7 @@ int get_service_path_default(struct inode_s *inode, struct fuse_path_s *fpath)
     inode=entry->inode;
     fs=inode->fs;
 
-    fs_get_inode_link(inode, &link);
+    get_inode_link(inode, &link);
     if (link.type!=INODE_LINK_TYPE_CONTEXT) goto appendname;
 
     /* inode is the "root" of the service: data is holding the context */
@@ -147,6 +150,8 @@ static int get_service_path_cached(struct directory_s *directory, void *ptr)
     struct pathcache_s *pathcache=(struct pathcache_s *) directory->pathcalls.cache;
     struct fuse_path_s *fpath=(struct fuse_path_s *) ptr;
 
+    logoutput("get_service_path_cached");
+
     fpath->context=pathcache->context;
     fpath->pathstart-=pathcache->len;
     memcpy(fpath->pathstart, pathcache->path, pathcache->len);
@@ -160,8 +165,13 @@ static int get_service_path_cached(struct directory_s *directory, void *ptr)
 static int get_service_path_root(struct directory_s *directory, void *ptr)
 {
     struct fuse_path_s *fpath=(struct fuse_path_s *) ptr;
+    struct inode_link_s link;
 
-    fpath->context=(struct service_context_s *) directory->link.link.ptr;
+    logoutput("get_service_path_root");
+
+    get_inode_link(directory->inode, &link);
+    fpath->context=(link.type==INODE_LINK_TYPE_CONTEXT) ? ((struct service_context_s *) link.link.ptr) : NULL;
+
     return 0;
 
 }

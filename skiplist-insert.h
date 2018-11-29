@@ -17,8 +17,8 @@
 
 */
 
-#ifndef _SL_INSERT_H
-#define _SL_INSERT_H
+#ifndef SB_COMMON_UTILS_INSERT_H
+#define SB_COMMON_UTILS_INSERT_H
 
 #define _SL_INSERT_FLAG_NOLANE			1
 

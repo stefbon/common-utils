@@ -16,55 +16,78 @@
   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
-#ifndef FS_WORKSPACE_INTERFACE_H
-#define FS_WORKSPACE_INTERFACE_H
+#ifndef SB_COMMON_UTILS_WORKSPACE_INTERFACE_H
+#define SB_COMMON_UTILS_WORKSPACE_INTERFACE_H
 
 #include "pathinfo.h"
+#include "network-utils.h"
 
-#define _INTERFACE_NETWORK_IPV4			1
-#define _INTERFACE_NETWORK_IPV6			2
-#define _INTERFACE_FUSE_MOUNT			3
-#define _INTERFACE_SMB_SERVERSHARE		4
-#define _INTERFACE_SFTP_SERVER			5
-#define _INTERFACE_NFS_EXPORT			6
+#define _INTERFACE_ADDRESS_NONE				0
+#define _INTERFACE_ADDRESS_NETWORK			1
+#define _INTERFACE_ADDRESS_SMB_SERVER			2
 
-#define _INTERFACE_OPTION_INT			1
-#define _INTERFACE_OPTION_PCHAR			2
-#define _INTERFACE_OPTION_PVOID			3
+#define _INTERFACE_SERVICE_NONE				0
+#define _INTERFACE_SERVICE_FUSE				1
+#define _INTERFACE_SERVICE_PORT				2
+#define _INTERFACE_SERVICE_SMB_SHARE			3
+#define _INTERFACE_SERVICE_NFS_EXPORT			4
+#define _INTERFACE_SERVICE_SFTP				5
+
+#define _INTERFACE_SFTP_FLAG_NEWREADDIR			1
+
+#define _INTERFACE_PORT_TCP				1
+#define _INTERFACE_PORT_UDP				2
+
+#define _INTERFACE_OPTION_INT				1
+#define _INTERFACE_OPTION_PCHAR				2
+#define _INTERFACE_OPTION_PVOID				3
 
 struct context_option_s {
-    unsigned char			type;
+    unsigned char					type;
     union {
-	unsigned int			number;
-	char				*ptr;
-	void				*data;
+	unsigned int					number;
+	char						*ptr;
+	void						*data;
     } value;
 };
 
-struct context_address_s {
-    unsigned char			type;
+struct network_port_s {
+    unsigned int					port;
+    unsigned char					type;
+};
+
+struct service_address_s {
+    unsigned char					type;
     union {
-	struct network_address_s {
-	    char			*address;
-	    unsigned int		port;
-	} network;
+	struct network_port_s				port;
 	struct fuse_mount_s {
-	    char			*source;
-	    char			*mountpoint;
-	    char			*name;
+	    char					*source;
+	    char					*mountpoint;
+	    char					*name;
 	} fuse;
 	struct smbshare_s {
-	    char			*server;
-	    char			*share;
+	    char					share[128];
+	    unsigned int				port;
 	} smbshare;
 	struct sftp_server_s {
-	    char			*name;
+	    char					name[256];
 	} sftp;
 	struct nfs_export_s {
-	    char			*server;
-	    char			*dir;
+	    char					*dir;
+	    unsigned int				port;
 	} nfs;
     } target;
+};
+
+struct context_address_s {
+    struct network_address_s {
+	unsigned char					type;
+	union {
+	    struct host_address_s			host;
+	    char					smbserver[128];
+	} target;
+    } network;
+    struct service_address_s				service;
 };
 
 #define CONTEXT_INTERFACE_BACKEND_SFTP_PREFIX_HOME					1
@@ -91,6 +114,7 @@ struct context_interface_s {
 		char				*path;
 		unsigned int			len;
 	    } prefix;
+	    unsigned int			flags;
 	} sftp;
 	void					*data;
     } backend;

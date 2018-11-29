@@ -17,8 +17,8 @@
 
 */
 
-#ifndef _SL_DELETE_H
-#define _SL_DELETE_H
+#ifndef SB_COMMON_UTILS_DELETE_H
+#define SB_COMMON_UTILS_DELETE_H
 
 /* remove an entry in a skip list (=directory) */
 

@@ -17,8 +17,8 @@
 
 */
 
-#ifndef MOUNTINFO_H
-#define MOUNTINFO_H
+#ifndef SB_COMMON_UTILS_MOUNTINFO_H
+#define SB_COMMON_UTILS_MOUNTINFO_H
 
 #include "simple-list.h"
 

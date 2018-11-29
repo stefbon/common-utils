@@ -196,24 +196,24 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
     void *ptr=NULL;
     int level=0;
 
-    logoutput_warning("delete_nonempty_sl: sl %s", (sl) ? "defined" : "not defined");
-    if (sl) {
+    // logoutput_warning("delete_nonempty_sl: sl %s", (sl) ? "defined" : "not defined");
+    // if (sl) {
 
-	logoutput_warning("delete_nonempty_sl: create_rlock %s", (sl->ops.create_rlock) ? "defined" : "not defined");
+	// logoutput_warning("delete_nonempty_sl: create_rlock %s", (sl->ops.create_rlock) ? "defined" : "not defined");
 
-    } else {
+    // } else {
 
-	logoutput_warning("delete_nonempty_sl: create_rlock sl not defined");
+	// logoutput_warning("delete_nonempty_sl: create_rlock sl not defined");
 
-    }
+    // }
 
     ptr=sl->ops.create_rlock(sl);
 
-    logoutput("delete_nonempty_sl: A");
+    // logoutput("delete_nonempty_sl: A");
 
     if (sl->ops.count(sl)==0) goto unlock;
 
-    logoutput("delete_nonempty_sl: init");
+    // logoutput("delete_nonempty_sl: init");
 
     init_vector(&vector);
 
@@ -230,7 +230,7 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
 	struct dirnode_struct *next_dirnode=NULL;
 	void *next=NULL;
 
-	logoutput("delete_nonempty_sl: dn not NULL");
+	// logoutput("delete_nonempty_sl: dn not NULL");
 
 	/* head of the skiplist */
 
@@ -244,7 +244,7 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
 
 	    pthread_mutex_lock(&sl->mutex);
 
-	    logoutput("delete_nonempty_sl: level %i", level);
+	    // logoutput("delete_nonempty_sl: level %i", level);
 
 	    dirnode=vector.lane[level].dirnode;
 	    next_dirnode=dirnode->junction[level].next;
@@ -493,11 +493,11 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
 
     unlock:
 
-    logoutput("delete_nonempty_sl: unlock");
+    // logoutput("delete_nonempty_sl: unlock");
 
     sl->ops.unlock(sl, ptr);
 
-    logoutput("delete_nonempty_sl: B");
+    // logoutput("delete_nonempty_sl: B");
 
     destroy_vector_lanes(&vector);
 

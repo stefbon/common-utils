@@ -35,7 +35,6 @@
 #include <sys/stat.h>
 #include <sys/param.h>
 #include <sys/types.h>
-#include <sys/inotify.h>
 #include <fcntl.h>
 #include <time.h>
 #include <dirent.h>
@@ -470,4 +469,20 @@ int custom_fork()
 
     return 0;
 
+}
+
+uint32_t safe_atoi(char *b)
+{
+    char buffer[5];
+    memcpy(buffer, b, 4);
+    buffer[4]='\0';
+    return (uint32_t) atoi(buffer);
+}
+
+uint64_t safe_atoii(char *b)
+{
+    char buffer[9];
+    memcpy(buffer, b, 8);
+    buffer[8]='\0';
+    return (uint64_t) atol(buffer);
 }

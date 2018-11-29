@@ -17,8 +17,8 @@
 
 */
 
-#ifndef GENERIC_BEVENTLOOP_H
-#define GENERIC_BEVENTLOOP_H
+#ifndef SB_COMMON_UTILS_BEVENTLOOP_H
+#define SB_COMMON_UTILS_BEVENTLOOP_H
 
 #include <sys/epoll.h>
 #include <sys/signalfd.h>
@@ -52,56 +52,65 @@
 
 #define BEVENT_NAME_LEN				32
 
-
 typedef int (*bevent_cb)(int fd, void *data, uint32_t events);
 
+#define TIMERID_TYPE_PTR			1
+#define TIMERID_TYPE_UNIQUE			2
+
+struct timerid_s {
+    void					*context;
+    union					{
+	void					*ptr;
+	uint64_t				unique;
+    } id;
+    unsigned char 				type;
+};
+
 struct timerentry_s {
-    struct timespec 			expire;
-    unsigned char 			status;
-    unsigned long 			ctr;
-    void 				(*eventcall) (void *data);
-    void 				*data;
-    struct beventloop_s 		*loop;
-    struct list_element_s		list;
+    struct timespec 				expire;
+    unsigned char 				status;
+    unsigned long 				ctr;
+    void 					(*eventcall) (struct timerid_s *id, struct timespec *now);
+    struct timerid_s				id;
+    struct beventloop_s 			*loop;
+    struct list_element_s			list;
 };
 
 struct beventloop_s;
 
 struct timer_list_s {
-    struct list_element_s		*head;
-    struct list_element_s		*tail;
-    pthread_mutex_t 			mutex;
-    pthread_t				threadid;
-    unsigned int			fd;
-    void				(* run_expired)(struct beventloop_s *loop);
+    struct list_header_s			header;
+    pthread_mutex_t 				mutex;
+    pthread_t					threadid;
+    unsigned int				fd;
+    void					(* run_expired)(struct beventloop_s *loop);
 };
 
 /* struct to identify the fd when epoll signals activity on that fd */
 
 struct bevent_xdata_s {
-    int 				fd;
-    void 				*data;
-    unsigned char 			status;
-    bevent_cb 				callback;
-    char 				name[BEVENT_NAME_LEN];
-    struct list_element_s		list;
-    struct beventloop_s 		*loop;
+    int 					fd;
+    void 					*data;
+    unsigned char 				status;
+    bevent_cb 					callback;
+    char 					name[BEVENT_NAME_LEN];
+    struct list_element_s			list;
+    struct beventloop_s 			*loop;
 };
 
 struct xdata_list_s {
-    struct list_element_s		*head;
-    struct list_element_s		*tail;
+    struct list_header_s			header;
 };
 
 /* eventloop */
 
 struct beventloop_s {
-    unsigned char 			status;
-    unsigned int			options;
-    struct xdata_list_s			xdata_list;
-    void 				(*cb_signal) (struct beventloop_s *loop, void *data, struct signalfd_siginfo *fdsi);
-    int 				fd;
-    struct timer_list_s			timer_list;
+    unsigned char 				status;
+    unsigned int				options;
+    struct xdata_list_s				xdata_list;
+    void 					(*cb_signal) (struct beventloop_s *loop, void *data, struct signalfd_siginfo *fdsi);
+    int 					fd;
+    struct timer_list_s				timer_list;
 };
 
 /* Prototypes */

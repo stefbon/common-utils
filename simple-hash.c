@@ -29,7 +29,7 @@
 
 #include "simple-list.h"
 #include "simple-hash.h"
-#define LOGGING
+#undef LOGGING
 #include "logging.h"
 
 static inline struct hash_element_s *get_hash_element(struct list_element_s *list)
@@ -46,8 +46,7 @@ static struct hash_element_s *create_hash_element()
     if (element) {
 
 	element->data=NULL;
-	element->list.next=NULL;
-	element->list.prev=NULL;
+	init_list_element(&element->list, NULL);
 
     }
 
@@ -58,13 +57,13 @@ static struct hash_element_s *create_hash_element()
 static void insert_in_hash(struct simple_hash_s *group, struct hash_element_s *element)
 {
     unsigned int i=((*group->hashfunction)(element->data) % group->len);
-    add_list_element_last(&group->hash[i].head, &group->hash[i].tail, &element->list);
+    add_list_element_last(&group->hash[i], &element->list);
 }
 
 static void move_from_hash(struct simple_hash_s *group, struct hash_element_s *element)
 {
     unsigned int i=((*group->hashfunction) (element->data) % group->len);
-    remove_list_element(&group->hash[i].head, &group->hash[i].tail, &element->list);
+    remove_list_element(&element->list);
 }
 
 struct hash_element_s *lookup_simple_hash(struct simple_hash_s *group, void *data)
@@ -81,7 +80,7 @@ struct hash_element_s *lookup_simple_hash(struct simple_hash_s *group, void *dat
 
 	element=get_hash_element(list);
 	if (element->data==data) break;
-	list=list->next;
+	list=list->n;
 	element=NULL; /* element has an invalid value... forget it otherwise this will be returned */
 
     }
@@ -114,12 +113,9 @@ int initialize_group(struct simple_hash_s *group, unsigned int (*hashfunction) (
 {
     int result=0;
 
-    if (init_simple_locking(&group->locking)==-1) {
+    *error=ENOMEM;
 
-	*error=ENOMEM;
-	goto error;
-
-    }
+    if (init_simple_locking(&group->locking)==-1) goto error;
 
     group->hashfunction=hashfunction;
     group->len=len;
@@ -127,21 +123,10 @@ int initialize_group(struct simple_hash_s *group, unsigned int (*hashfunction) (
 
     if (len>0) {
 
-	group->hash=(struct hash_head_s *) malloc(len * sizeof(struct hash_head_s));
-
-	if (! group->hash) {
-
-	    *error=ENOMEM;
-	    goto error;
-
-	}
-
-	for (unsigned int i=0;i<len;i++) {
-
-	    group->hash[i].head=NULL;
-	    group->hash[i].tail=NULL;
-
-	}
+	group->hash=(struct list_header_s *) malloc(len * sizeof(struct list_header_s));
+	if (! group->hash) goto error;
+	*error=0;
+	for (unsigned int i=0;i<len;i++) init_list_header(&group->hash[i], SIMPLE_LIST_TYPE_EMPTY, NULL);
 
     }
 
@@ -172,7 +157,7 @@ void free_group(struct simple_hash_s *group, void (*free_data) (void *data))
 
 	    while(element) {
 
-		group->hash[i].head=list->next;
+		group->hash[i].head=list->n;
 
 		element=get_hash_element(list);
 		if (free_data && element->data) free_data(element->data);
@@ -202,7 +187,7 @@ void *get_next_hashed_value(struct simple_hash_s *group, void **index, unsigned 
     if (*index) {
 
 	element=(struct hash_element_s *) *index;
-	element=(element->list.next) ? get_hash_element(element->list.next) : NULL;
+	element=(element->list.n) ? get_hash_element(element->list.n) : NULL;
 
     } else {
 
@@ -222,8 +207,7 @@ void add_data_to_hash(struct simple_hash_s *group, void *data)
     if (element) {
 
 	element->data=data;
-	element->list.next=NULL;
-	element->list.prev=NULL;
+	init_list_element(&element->list, NULL);
 	insert_in_hash(group, element);
 
     }

@@ -17,8 +17,8 @@
 
 */
 
-#ifndef _FSCHANGENOTIFY_FSSYNC_H
-#define _FSCHANGENOTIFY_FSSYNC_H
+#ifndef SB_COMMON_UTILS_FSSYNC_H
+#define SB_COMMON_UTILS_FSSYNC_H
 
 // Prototypes
 

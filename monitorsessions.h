@@ -17,8 +17,8 @@
 
 */
 
-#ifndef FS_WORKSPACE_MONITORSESSIONS_H
-#define FS_WORKSPACE_MONITORSESSIONS_H
+#ifndef FS_WORKSPACE_MONITOR_SESSIONS_H
+#define FS_WORKSPACE_MONITOR_SESSIONS_H
 
 int init_sessions_monitor(void (*cb)(uid_t uid, char *what, signed char change), struct beventloop_s *beventloop);
 void close_sessions_monitor();

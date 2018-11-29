@@ -17,8 +17,8 @@
 
 */
 
-#ifndef FS_WORKSPACE_H
-#define FS_WORKSPACE_H
+#ifndef SB_COMMON_UTILS_WORKSPACE_H
+#define SB_COMMON_UTILS_WORKSPACE_H
 
 #include <pwd.h>
 #include <grp.h>
@@ -28,6 +28,7 @@
 #include "directory-management.h"
 #include "workspace-interface.h"
 #include "fuse-interface.h"
+#include "fuse-fs.h"
 #include "simple-list.h"
 #include "utils.h"
 
@@ -44,6 +45,7 @@
 #define WORKSPACE_STATUS_UNMOUNTING		2
 #define WORKSPACE_STATUS_UNMOUNTED		3
 
+#define SERVICE_CTX_TYPE_DUMMY			0
 #define SERVICE_CTX_TYPE_WORKSPACE		1
 #define SERVICE_CTX_TYPE_SERVICE		2
 
@@ -53,17 +55,12 @@
 
 struct workspace_mount_s;
 
-struct context_head_s {
-    struct list_element_s			*head;
-    struct list_element_s			*tail;
-};
-
 struct fuse_user_s {
     unsigned int				options;
     uid_t 					uid;
     char					status[32];
     pthread_mutex_t				mutex;
-    struct context_head_s			workspaces;
+    struct list_header_s			workspaces;
     void					(* add_workspace)(struct fuse_user_s *u, struct workspace_mount_s *w);
     void					(* remove_workspace)(struct fuse_user_s *u, struct workspace_mount_s *w);
 };
@@ -192,7 +189,7 @@ struct workspace_mount_s {
     struct pathinfo_s 				mountpoint;
     struct timespec				syncdate;
     unsigned int				status;
-    struct context_head_s			contexes;
+    struct list_header_s			contexes;
     void					(* free)(struct workspace_mount_s *mount);
     struct list_element_s			list;
 };

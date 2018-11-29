@@ -18,8 +18,8 @@
 
 */
 
-#ifndef GENERAL_SIMPLE_LOCKING_H
-#define GENERAL_SIMPLE_LOCKING_H
+#ifndef SB_COMMON_UTILS_SIMPLE_LOCKING_H
+#define SB_COMMON_UTILS_SIMPLE_LOCKING_H
 
 #include "simple-list.h"
 

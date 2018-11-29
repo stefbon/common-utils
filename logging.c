@@ -24,11 +24,10 @@
 #include <errno.h>
 #include <err.h>
 #include <syslog.h>
-#include <sys/syscall.h>
+
 #include "logging.h"
 
 static unsigned char defaultlevel=0;
-void (* logoutput)(const char *fmt, ...);
 
 unsigned int gettid()
 {
@@ -52,6 +51,18 @@ void logoutput_warning_nolog(const char *fmt, ...)
 void logoutput_error_nolog(const char *fmt, ...)
 {
 }
+
+static struct logging_s logging_nolog = {
+
+    .debug=logoutput_debug_nolog,
+    .info=logoutput_info_nolog,
+    .notice=logoutput_notice_nolog,
+    .warning=logoutput_warning_nolog,
+    .error=logoutput_error_nolog,
+
+};
+
+struct logging_s *logging=&logging_nolog;
 
 /* log to stdout/stderr
     note:
@@ -125,6 +136,17 @@ void logoutput_error_std(const char *fmt, ...)
     va_end(args);
 }
 
+static struct logging_s logging_std = {
+
+    .debug=logoutput_debug_std,
+    .info=logoutput_info_std,
+    .notice=logoutput_notice_std,
+    .warning=logoutput_warning_std,
+    .error=logoutput_error_std,
+
+};
+
+
 /* log to syslog */
 
 void logoutput_debug_syslog(const char *fmt, ...)
@@ -168,76 +190,32 @@ void logoutput_error_syslog(const char *fmt, ...)
     va_end(args);
 }
 
-struct logoutput_s logging = {
+static struct logging_s logging_syslog = {
 
-    .debug			= logoutput_debug_std,
-    .info			= logoutput_info_std,
-    .notice			= logoutput_notice_std,
-    .warning			= logoutput_warning_std,
-    .error			= logoutput_error_std,
+    .debug			= logoutput_debug_syslog,
+    .info			= logoutput_info_syslog,
+    .notice			= logoutput_notice_syslog,
+    .warning			= logoutput_warning_syslog,
+    .error			= logoutput_error_syslog,
 };
 
 void switch_logging_backend(const char *what)
 {
 
+    logging=&logging_nolog;
+
     if (strcmp(what, "std")==0) {
 
-	logging.debug=logoutput_debug_std;
-	logging.info=logoutput_info_std;
-	logging.notice=logoutput_notice_std;
-	logging.warning=logoutput_warning_std;
-	logging.error=logoutput_error_std;
+	logging=&logging_std;
 
     } else if (strcmp(what, "syslog")==0) {
 
-	logging.debug=logoutput_debug_syslog;
-	logging.info=logoutput_info_syslog;
-	logging.notice=logoutput_notice_syslog;
-	logging.warning=logoutput_warning_syslog;
-	logging.error=logoutput_error_syslog;
+	logging=&logging_syslog;
 
-    } else if (strcmp(what, "nolog")==0) {
+    } else {
 
-	logging.debug=logoutput_debug_nolog;
-	logging.info=logoutput_info_nolog;
-	logging.notice=logoutput_notice_nolog;
-	logging.warning=logoutput_warning_nolog;
-	logging.error=logoutput_error_nolog;
+	syslog(LOG_WARNING, "log backend %s not reckognized", what);
 
     }
 
 }
-
-void switch_default_loglevel(const char *what)
-{
-
-    if (strcmp(what, "debug")==0) {
-
-	defaultlevel=0;
-	logoutput=logging.debug;
-
-    } else if (strcmp(what, "notice")==0) {
-
-	defaultlevel=2;
-	logoutput=logging.notice;
-
-    } else if (strcmp(what, "info")==0) {
-
-	defaultlevel=1;
-	logoutput=logging.info;
-
-    } else if (strcmp(what, "warning")==0) {
-
-	defaultlevel=3;
-	logoutput=logging.warning;
-
-    } else if (strcmp(what, "error")==0) {
-
-	defaultlevel=4;
-	logoutput=logging.error;
-
-    }
-
-}
-
-

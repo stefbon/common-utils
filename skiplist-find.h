@@ -17,8 +17,8 @@
 
 */
 
-#ifndef _SL_FIND_H
-#define _SL_FIND_H
+#ifndef SB_COMMON_UTILS_FIND_H
+#define SB_COMMON_UTILS_FIND_H
 
 
 /* find an entry in a skip list (=directory)*/

@@ -43,13 +43,14 @@
 #endif
 
 #include "pathinfo.h"
-#include "entry-management.h"
 #include "utils.h"
+#include "entry-management.h"
 #include "fuse-fs.h"
 #include "workspaces.h"
 #include "workspace-utils.h"
 
 #include "simple-hash.h"
+#undef LOGGING
 #include "logging.h"
 
 static struct simple_hash_s fuse_users_hash;
@@ -131,14 +132,14 @@ struct fuse_user_s *get_next_fuse_user(void **index, unsigned int *hashvalue)
 static void add_workspace(struct fuse_user_s *user, struct workspace_mount_s *w)
 {
     pthread_mutex_lock(&user->mutex);
-    add_list_element_last(&user->workspaces.head, &user->workspaces.tail, &w->list);
+    add_list_element_last(&user->workspaces, &w->list);
     pthread_mutex_unlock(&user->mutex);
 }
 
 static void remove_workspace(struct fuse_user_s *user, struct workspace_mount_s *w)
 {
     pthread_mutex_lock(&user->mutex);
-    remove_list_element(&user->workspaces.head, &user->workspaces.tail, &w->list);
+    remove_list_element(&w->list);
     pthread_mutex_unlock(&user->mutex);
 }
 
@@ -182,9 +183,7 @@ struct fuse_user_s *add_fuse_user(uid_t uid, char *status, unsigned int *error)
 
 	}
 
-	user->workspaces.head=NULL;
-	user->workspaces.tail=NULL;
-
+	init_list_header(&user->workspaces, SIMPLE_LIST_TYPE_EMPTY, NULL);
 	pthread_mutex_init(&user->mutex, NULL);
 	user->add_workspace=add_workspace;
 	user->remove_workspace=remove_workspace;

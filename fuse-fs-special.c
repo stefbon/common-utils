@@ -93,8 +93,8 @@ static void _fs_special_forget(struct inode_s *inode)
 
     fs_get_inode_link(inode, &link);
 
-    if (inode->ino>0) {
-	unsigned int hashvalue=calculate_special_entry_hash(inode->ino);
+    if (inode->st.st_ino>0) {
+	unsigned int hashvalue=calculate_special_entry_hash(inode->st.st_ino);
 	void *index=NULL;
 	void *ptr=NULL;
 	struct simple_lock_s lock;
@@ -107,7 +107,7 @@ static void _fs_special_forget(struct inode_s *inode)
 	while (ptr) {
 
 	    s=(struct special_path_s *) ptr;
-	    if (s->ino==inode->ino) break;
+	    if (s->ino==inode->st.st_ino) break;
 
 	    ptr=get_next_hashed_value(&special_entries, &index, hashvalue);
 	    s=NULL;
@@ -139,8 +139,8 @@ static void _fs_special_setattr(struct service_context_s *context, struct fuse_r
 
 	if (set & FATTR_ATIME_NOW) get_current_time(&st->st_atim);
 
-	inode->atim.tv_sec=st->st_atim.tv_sec;
-	inode->atim.tv_nsec=st->st_atim.tv_nsec;
+	inode->st.st_atim.tv_sec=st->st_atim.tv_sec;
+	inode->st.st_atim.tv_nsec=st->st_atim.tv_nsec;
 
     }
 
@@ -262,6 +262,7 @@ void init_special_fs()
 
     statfs("/", &statfs_keep);
 
+    memset(&fs, 0, sizeof(struct fuse_fs_s));
     set_virtual_fs(&fs);
 
     fs.forget=_fs_special_forget;
@@ -289,7 +290,7 @@ void free_special_fs()
 void set_fs_special(struct inode_s *inode)
 {
 
-    if (! S_ISDIR(inode->mode)) {
+    if (! S_ISDIR(inode->st.st_mode)) {
 
 	inode->fs=&fs;
 
@@ -301,7 +302,7 @@ void create_desktopentry_file(char *path, struct entry_s *parent, struct workspa
 {
     struct stat st;
 
-    logoutput("create_desktopentry_file: path %s", path);
+    // logoutput("create_desktopentry_file: path %s", path);
 
     if (lstat(path, &st)==0 && S_ISREG(st.st_mode)) {
 	struct name_s xname;
@@ -312,9 +313,9 @@ void create_desktopentry_file(char *path, struct entry_s *parent, struct workspa
 	xname.len=strlen(xname.name);
 	calculate_nameindex(&xname);
 
-	logoutput("create_desktopentry_file: A");
+	// logoutput("create_desktopentry_file: A");
 
-	struct entry_s *entry=_fs_common_create_entry_unlocked(workspace, directory, &xname, &st, 0, &error);
+	struct entry_s *entry=_fs_common_create_entry_unlocked(workspace, directory, &xname, &st, 0, 0, &error);
 
 	if (entry) {
 	    struct special_path_s *s=malloc(sizeof(struct special_path_s) + strlen(path) + 1); /* inlcuding terminating zero */
@@ -322,16 +323,16 @@ void create_desktopentry_file(char *path, struct entry_s *parent, struct workspa
 	    if (s) {
 		struct simple_lock_s lock;
 
-		logoutput("create_desktopentry_file: B");
+		// logoutput("create_desktopentry_file: B");
 
 		entry->inode->fs=&fs;
-		s->ino=entry->inode->ino;
+		s->ino=entry->inode->st.st_ino;
 		strcpy(s->path, path);
 		s->size=strlen(path);
 
 		init_wlock_hashtable(&special_entries, &lock);
 
-		logoutput("create_desktopentry_file: created entry");
+		// logoutput("create_desktopentry_file: created entry");
 
 		lock_hashtable(&lock);
 		add_data_to_hash(&special_entries, (void *) s);
@@ -348,13 +349,6 @@ void create_desktopentry_file(char *path, struct entry_s *parent, struct workspa
 int check_entry_special(struct inode_s *inode)
 {
     int result=-1;
-
-    if (! S_ISDIR(inode->mode)) {
-
-	result=(inode->fs==&fs) ? 0 : -1;
-
-    }
-
+    if (! S_ISDIR(inode->st.st_mode)) result=(inode->fs==&fs) ? 0 : -1;
     return result;
-
 }

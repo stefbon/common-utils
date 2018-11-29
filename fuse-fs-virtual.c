@@ -67,12 +67,7 @@ static pthread_mutex_t done_mutex=PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t datalink_mutex=PTHREAD_MUTEX_INITIALIZER;
 static struct statfs default_statfs;
 
-void use_virtual_fs(struct service_context_s *context, struct inode_s *inode);
-
-static unsigned char _fs_get_count()
-{
-    return 0;
-}
+// void use_virtual_fs(struct service_context_s *context, struct inode_s *inode);
 
 static int _lock_datalink(struct inode_s *inode)
 {
@@ -83,17 +78,6 @@ static int _unlock_datalink(struct inode_s *inode)
 {
     return pthread_mutex_unlock(&datalink_mutex);
 }
-
-static int get_inode_link_nondir(struct inode_s *inode, struct inode_link_s *link)
-{
-    return (* inode->get_inode_link)(inode, link);
-}
-
-static int get_inode_link_dir(struct inode_s *inode, struct inode_link_s *link)
-{
-    return get_inode_link_directory(inode, link);
-}
-
 static void _fs_forget(struct inode_s *inode)
 {
 }
@@ -241,7 +225,7 @@ static void _fs_releasedir(struct fuse_opendir_s *opendir, struct fuse_request_s
 
 static void _fs_fsnotify(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, uint32_t mask)
 {
-    logoutput("_fs_fsnotify: watch on %li mask %i", (unsigned long) inode->ino, mask);
+    logoutput("_fs_fsnotify: watch on %li mask %i", (unsigned long) inode->st.st_ino, mask);
 }
 
 static void _fs_setxattr(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, const char *name, const char *value, size_t size, int flags)
@@ -274,10 +258,37 @@ static void _fs_statfs(struct service_context_s *context, struct fuse_request_s 
     _fs_common_statfs(context, request, inode, default_statfs.f_blocks, default_statfs.f_bfree, default_statfs.f_bavail, default_statfs.f_bsize);
 }
 
+static void init_virtual_fs();
+
+void use_virtual_fs(struct service_context_s *context, struct inode_s *inode)
+{
+
+    logoutput("use_virtual_fs");
+
+    pthread_mutex_lock(&done_mutex);
+
+    if (done==0) {
+	init_virtual_fs();
+	done=1;
+    }
+
+    pthread_mutex_unlock(&done_mutex);
+
+    if (S_ISDIR(inode->st.st_mode)) {
+
+	inode->fs=&virtual_dir_fs;
+    
+    } else {
+
+	inode->fs=&virtual_nondir_fs;
+
+    }
+
+}
+
 static void _set_virtual_fs(struct fuse_fs_s *fs)
 {
 
-    fs->get_count=_fs_get_count;
     fs->lock_datalink=_lock_datalink;
     fs->unlock_datalink=_unlock_datalink;
 
@@ -287,10 +298,7 @@ static void _set_virtual_fs(struct fuse_fs_s *fs)
 
     if ((fs->flags & FS_SERVICE_FLAG_DIR) || (fs->flags & FS_SERVICE_FLAG_ROOT)) {
 
-	fs->get_inode_link= get_inode_link_dir;
-
 	fs->type.dir.use_fs=use_virtual_fs;
-
 	fs->type.dir.lookup=_fs_lookup;
 
 	fs->type.dir.create=_fs_create;
@@ -312,8 +320,6 @@ static void _set_virtual_fs(struct fuse_fs_s *fs)
 	fs->type.dir.fsnotify=_fs_fsnotify;
 
     } else {
-
-	fs->get_inode_link= get_inode_link_nondir;
 
 	fs->type.nondir.readlink=_fs_readlink;
 
@@ -373,29 +379,6 @@ static void init_virtual_fs()
 
 }
 
-void use_virtual_fs(struct service_context_s *context, struct inode_s *inode)
-{
-
-    pthread_mutex_lock(&done_mutex);
-
-    if (done==0) {
-	init_virtual_fs();
-	done=1;
-    }
-
-    pthread_mutex_unlock(&done_mutex);
-
-    if (S_ISDIR(inode->mode)) {
-
-	inode->fs=&virtual_dir_fs;
-
-    } else {
-
-	inode->fs=&virtual_nondir_fs;
-
-    }
-
-}
 
 void set_virtual_fs(struct fuse_fs_s *fs)
 {
