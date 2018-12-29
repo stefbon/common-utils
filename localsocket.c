@@ -523,7 +523,7 @@ int compare_network_connection(struct fs_connection_s *conn, char *address, unsi
 
 	}
 
-	if (check_family_ip_address(address, "ipv4")==0 && w->ai_addr->sa_family==AF_INET) {
+	if (check_family_ip_address(address, "ipv4")==1 && w->ai_addr->sa_family==AF_INET) {
 	    struct sockaddr_in *s=(struct sockaddr_in *) w->ai_addr;
 	    char *tmp=inet_ntoa(s->sin_addr);
 
