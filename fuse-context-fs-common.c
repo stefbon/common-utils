@@ -45,9 +45,9 @@
 #include "beventloop.h"
 #include "utils.h"
 
-#include "entry-management.h"
-#include "directory-management.h"
-#include "entry-utils.h"
+#include "fuse-dentry.h"
+#include "fuse-directory.h"
+#include "fuse-utils.h"
 
 #include "fuse-fs.h"
 #include "workspaces.h"
@@ -117,6 +117,7 @@ void service_fs_release(struct fuse_openfile_s *openfile, struct fuse_request_s 
 void service_fs_getlock(struct fuse_openfile_s *openfile, struct fuse_request_s *request, struct flock *flock)
 {
     logoutput("GETLOCK %s (thread %i)", openfile->context->name, (int) gettid());
+    reply_VFS_error(request, ENOSYS);
     (* openfile->context->fs->getlock)(openfile, request, flock);
 }
 
@@ -125,6 +126,7 @@ void service_fs_getlock(struct fuse_openfile_s *openfile, struct fuse_request_s 
 void service_fs_setlock(struct fuse_openfile_s *openfile, struct fuse_request_s *request, struct flock *flock)
 {
     logoutput("SETLOCK %s (thread %i)", openfile->context->name, (int) gettid());
+    reply_VFS_error(request, ENOSYS);
     (* openfile->context->fs->setlock)(openfile, request, flock);
 }
 
@@ -133,6 +135,7 @@ void service_fs_setlock(struct fuse_openfile_s *openfile, struct fuse_request_s 
 void service_fs_setlockw(struct fuse_openfile_s *openfile, struct fuse_request_s *request, struct flock *flock)
 {
     logoutput("SETLOCKW %s (thread %i)", openfile->context->name, (int) gettid());
+    reply_VFS_error(request, ENOSYS);
     (* openfile->context->fs->setlockw)(openfile, request, flock);
 }
 
@@ -142,6 +145,7 @@ void service_fs_flock(struct fuse_openfile_s *openfile, struct fuse_request_s *r
 {
 
     logoutput("FLOCK %s (thread %i) lock %i:%i", openfile->context->name, (int) gettid(), openfile->flock, type);
+    reply_VFS_error(request, ENOSYS);
 
     /*
 	type can be one of following:

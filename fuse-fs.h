@@ -22,7 +22,7 @@
 
 #include <fcntl.h>
 
-#include "entry-management.h"
+#include "fuse-dentry.h"
 #include "fuse-interface.h"
 
 #define FS_SERVICE_FLAG_VIRTUAL					1
@@ -57,10 +57,11 @@ struct fuse_opendir_s {
     unsigned int 				error;
     unsigned int				count_created;
     unsigned int				count_found;
-    void 					(*readdir) (struct fuse_opendir_s *opendir, struct fuse_request_s *request, size_t size, off_t offset);
-    void 					(*readdirplus) (struct fuse_opendir_s *opendir, struct fuse_request_s *request, size_t size, off_t offset);
-    void 					(*releasedir) (struct fuse_opendir_s *opendir, struct fuse_request_s *request);
-    void 					(*fsyncdir) (struct fuse_opendir_s *opendir, struct fuse_request_s *request, unsigned char datasync);
+    void 					(* readdir) (struct fuse_opendir_s *opendir, struct fuse_request_s *request, size_t size, off_t offset);
+    void 					(* readdirplus) (struct fuse_opendir_s *opendir, struct fuse_request_s *request, size_t size, off_t offset);
+    void 					(* releasedir) (struct fuse_opendir_s *opendir, struct fuse_request_s *request);
+    void 					(* fsyncdir) (struct fuse_opendir_s *opendir, struct fuse_request_s *request, unsigned char datasync);
+    signed char					(* skip_file)(struct fuse_opendir_s *opendir, struct inode_s *inode);
     union {
 	uint64_t				fd;
 	void					*ptr;
@@ -91,7 +92,7 @@ struct fuse_fs_s {
 
     int (*lock_datalink)(struct inode_s *inode);
     int (*unlock_datalink)(struct inode_s *inode);
-    int (*get_inode_link)(struct inode_s *inode, struct inode_link_s *link);
+    void (*get_inode_link)(struct inode_s *inode, struct inode_link_s **link);
 
     void (*forget) (struct inode_s *inode);
 
@@ -166,7 +167,7 @@ unsigned char fuse_request_interrupted(struct fuse_request_s *request);
 int fs_lock_datalink(struct inode_s *inode);
 int fs_unlock_datalink(struct inode_s *inode);
 
-int fs_get_inode_link(struct inode_s *inode, struct inode_link_s *link);
+void fs_get_inode_link(struct inode_s *inode, struct inode_link_s **link);
 
 void fuse_fs_forget(struct fuse_request_s *request);
 void fuse_fs_forget_multi(struct fuse_request_s *request);

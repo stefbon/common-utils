@@ -164,6 +164,7 @@ struct bevent_xdata_s *add_to_beventloop(int fd, uint32_t events, bevent_cb call
 
 	if (xdata) {
 
+	    memset(xdata, 0, sizeof(struct bevent_xdata_s));
 	    xdata->status|=BEVENT_OPTION_ALLOCATED;
 	    init_xdata(xdata);
 

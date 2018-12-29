@@ -46,14 +46,15 @@
 #include "pathinfo.h"
 #include "utils.h"
 
-#include "entry-management.h"
-#include "directory-management.h"
+#include "fuse-dentry.h"
+#include "fuse-directory.h"
 #include "fuse-interface.h"
 #include "fuse-fs.h"
 #include "workspaces.h"
 #include "workspace-context.h"
 #include "workspace-interface.h"
 
+extern int check_entry_special(struct inode_s *inode);
 
 void copy_fuse_fs(struct fuse_fs_s *to, struct fuse_fs_s *from)
 {
@@ -76,9 +77,9 @@ int fs_unlock_datalink(struct inode_s *inode)
     return (* inode->fs->unlock_datalink)(inode);
 }
 
-int fs_get_inode_link(struct inode_s *inode, struct inode_link_s *link)
+void fs_get_inode_link(struct inode_s *inode, struct inode_link_s **link)
 {
-    return (* inode->fs->get_inode_link)(inode, link);
+    (* inode->fs->get_inode_link)(inode, link);
 }
 
 void fuse_fs_forget(struct fuse_request_s *request)
@@ -679,6 +680,11 @@ void fuse_fs_create(struct fuse_request_s *request)
 
 }
 
+static signed char skip_file_default(struct fuse_opendir_s *opendir, struct inode_s *inode)
+{
+    return (signed char) check_entry_special(inode); /* by default do not include special files in readdir in virtual maps etc */
+}
+
 void _fuse_fs_opendir(struct service_context_s *context, struct inode_s *inode, struct fuse_request_s *request, struct fuse_open_in *open_in)
 {
     struct fuse_opendir_s *opendir=NULL;
@@ -701,6 +707,8 @@ void _fuse_fs_opendir(struct service_context_s *context, struct inode_s *inode, 
 	opendir->releasedir=inode->fs->type.dir.releasedir;
 	opendir->fsyncdir=inode->fs->type.dir.fsyncdir;
 	opendir->data=NULL;
+
+	opendir->skip_file=skip_file_default;
 
 	//logoutput_info("_fuse_fs_opendir: fs defined %s", (inode->fs) ? "yes" : "no");
 	//if (inode->fs) logoutput_info("_fuse_fs_opendir: opendir defined %s", (inode->fs->type.dir.opendir) ? "yes" : "no");

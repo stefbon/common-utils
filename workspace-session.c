@@ -44,7 +44,7 @@
 
 #include "pathinfo.h"
 #include "utils.h"
-#include "entry-management.h"
+#include "fuse-dentry.h"
 #include "fuse-fs.h"
 #include "workspaces.h"
 #include "workspace-utils.h"

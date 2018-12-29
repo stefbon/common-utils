@@ -49,10 +49,9 @@
 #include "beventloop.h"
 #include "utils.h"
 
-#include "entry-management.h"
-#include "directory-management.h"
-#include "entry-utils.h"
-
+#include "fuse-dentry.h"
+#include "fuse-directory.h"
+#include "fuse-utils.h"
 #include "fuse-fs.h"
 #include "workspaces.h"
 #include "workspace-context.h"
@@ -100,9 +99,9 @@ static void service_fs_forget(struct inode_s *inode)
 
 static struct service_context_s *get_context_root_inode(struct inode_s *inode)
 {
-    struct inode_link_s link;
-    get_inode_link(inode, &link);
-    return (link.type==INODE_LINK_TYPE_CONTEXT) ? ((struct service_context_s *) (link.link.ptr)) : NULL;
+    struct inode_link_s *link=NULL;
+    fs_get_inode_link(inode, &link);
+    return (link->type==INODE_LINK_TYPE_CONTEXT) ? ((struct service_context_s *) (link->link.ptr)) : NULL;
 }
 
 /* LOOKUP */
@@ -132,9 +131,9 @@ static void service_fs_lookup(struct service_context_s *context, struct fuse_req
 
     entry=find_entry(pinode->alias, &xname, &error);
 
-    logoutput("service_fs_lookup: root context %s (thread %i) %s", context->name, (int) gettid(), pathinfo.path);
-
     if (entry) {
+
+	logoutput("service_fs_lookup: root context %s (thread %i) %s (entry found)", context->name, (int) gettid(), pathinfo.path);
 
 	if (check_entry_special(entry->inode)==0) {
 
@@ -147,6 +146,8 @@ static void service_fs_lookup(struct service_context_s *context, struct fuse_req
 	}
 
     } else {
+
+	logoutput("service_fs_lookup: root context %s (thread %i) %s (entry not found)", context->name, (int) gettid(), pathinfo.path);
 
 	(* context->fs->lookup_new)(context, request, pinode, &xname, &pathinfo);
 
@@ -445,7 +446,6 @@ static void service_fs_symlink(struct service_context_s *context, struct fuse_re
 	struct pathinfo_s pathinfo=PATHINFO_INIT;
 	unsigned int pathlen=get_pathmax(context->workspace) + xname.len + 1;
 	char path[pathlen + 1];
-	struct directory_s *directory=NULL;
 	char *pathstart=NULL;
 	char *remote_target=NULL;
 	union datalink_u *link=NULL;

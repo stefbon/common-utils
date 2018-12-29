@@ -49,10 +49,9 @@
 #include "pathinfo.h"
 #include "utils.h"
 #include "beventloop.h"
-#include "entry-management.h"
-#include "directory-management.h"
-#include "entry-utils.h"
-
+#include "fuse-dentry.h"
+#include "fuse-directory.h"
+#include "fuse-utils.h"
 #include "fuse-fs.h"
 #include "workspaces.h"
 #include "fuse-fs-virtual.h"
@@ -80,6 +79,28 @@ static int _unlock_datalink(struct inode_s *inode)
 }
 static void _fs_forget(struct inode_s *inode)
 {
+}
+
+static void _fs_get_inode_link_dir(struct inode_s *inode, struct inode_link_s **link)
+{
+    struct directory_s *directory=NULL;
+
+    logoutput("_fs_get_inode_link_dir: ino %li", inode->st.st_ino);
+
+    pthread_mutex_lock(&datalink_mutex);
+    directory=(struct directory_s *) inode->link.link.ptr;
+    (* directory->dops->get_inode_link)(directory, inode, link);
+    pthread_mutex_unlock(&datalink_mutex);
+}
+
+static void _fs_get_inode_link_nondir(struct inode_s *inode, struct inode_link_s **link)
+{
+
+    logoutput("_fs_get_inode_link_nondir");
+
+    pthread_mutex_lock(&datalink_mutex);
+    *link=&inode->link;
+    pthread_mutex_unlock(&datalink_mutex);
 }
 
 static void _fs_lookup(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, const char *name, unsigned int len)
@@ -277,7 +298,7 @@ void use_virtual_fs(struct service_context_s *context, struct inode_s *inode)
     if (S_ISDIR(inode->st.st_mode)) {
 
 	inode->fs=&virtual_dir_fs;
-    
+
     } else {
 
 	inode->fs=&virtual_nondir_fs;
@@ -298,6 +319,7 @@ static void _set_virtual_fs(struct fuse_fs_s *fs)
 
     if ((fs->flags & FS_SERVICE_FLAG_DIR) || (fs->flags & FS_SERVICE_FLAG_ROOT)) {
 
+	fs->get_inode_link=_fs_get_inode_link_dir;
 	fs->type.dir.use_fs=use_virtual_fs;
 	fs->type.dir.lookup=_fs_lookup;
 
@@ -320,6 +342,8 @@ static void _set_virtual_fs(struct fuse_fs_s *fs)
 	fs->type.dir.fsnotify=_fs_fsnotify;
 
     } else {
+
+	fs->get_inode_link=_fs_get_inode_link_nondir;
 
 	fs->type.nondir.readlink=_fs_readlink;
 

@@ -50,7 +50,7 @@
 #include "beventloop-xdata.h"
 #include "workerthreads.h"
 
-#include "entry-management.h"
+#include "fuse-dentry.h"
 #include "workspace-interface.h"
 #include "fuse-interface.h"
 

@@ -24,8 +24,8 @@
 #include <grp.h>
 
 #include "beventloop.h"
-#include "entry-management.h"
-#include "directory-management.h"
+#include "fuse-dentry.h"
+#include "fuse-directory.h"
 #include "workspace-interface.h"
 #include "fuse-interface.h"
 #include "fuse-fs.h"
@@ -79,6 +79,8 @@ struct service_context_s {
 
     /* */
     unsigned char				flags;
+
+    dev_t					unique;
 
     /* service or fuse mount */
     unsigned char				type;

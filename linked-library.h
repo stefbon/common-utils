@@ -1,5 +1,5 @@
 /*
-  2010, 2011, 2012, 2013, 2014, 2015 Stef Bon <stefbon@gmail.com>
+  2017 Stef Bon <stefbon@gmail.com>
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License
@@ -17,24 +17,23 @@
 
 */
 
-#ifndef SB_COMMON_UTILS_PATH_CACHING_H
-#define SB_COMMON_UTILS_PATH_CACHING_H
+/* TODO: add function to translate library specific error to decription and to application specific error */
 
-#include "fuse-dentry.h"
+#ifndef SB_COMMON_UTILS_LINKED_LIBRARY_H
+#define SB_COMMON_UTILS_LINKED_LIBRARY_H
 
-#define PATHCACHE_TYPE_TEMP				1
-#define PATHCACHE_TYPE_PERM				2
+#include "error-handling.h"
 
-// Prototypes
+struct linked_library_s {
+    char				*name;
+    void				*ptr;
+    void				(* close)(void *ptr);
+    struct linked_library_s		*next;
+};
 
-int get_service_path_default(struct inode_s *inode, struct fuse_path_s *fpath);
-unsigned int add_name_path(struct fuse_path_s *fpath, struct name_s *xname);
-void init_fuse_path(struct fuse_path_s *fpath, char *path, unsigned int len);
+/* prototypes */
 
-void init_pathcalls(struct pathcalls_s *p);
-void init_pathcalls_root(struct pathcalls_s *p);
-
-void create_pathcache(struct pathcalls_s *p, struct fuse_path_s *fpath, unsigned char type);
-void free_pathcache(struct pathcalls_s *p);
+void add_linked_library(void *ptr, char *name, void (* close)(void *ptr));
+void close_linked_libraries();
 
 #endif

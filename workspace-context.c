@@ -44,18 +44,103 @@
 #include "workerthreads.h"
 #include "pathinfo.h"
 #include "utils.h"
-#include "entry-management.h"
-#include "directory-management.h"
-#include "entry-utils.h"
+#include "fuse-dentry.h"
+#include "fuse-directory.h"
+#include "fuse-utils.h"
 #include "beventloop.h"
 #include "beventloop-xdata.h"
 #include "fuse-interface.h"
 #include "fuse-fs.h"
 #include "workspaces.h"
+#include "simple-hash.h"
 
-#undef LOGGING
 #include "logging.h"
 
+static dev_t unique=0;
+static struct simple_hash_s context_hash = {
+    .len					= 128,
+    .hash					= NULL,
+};
+
+static unsigned int calculate_context_hash(struct service_context_s *c)
+{
+    return c->unique % context_hash.len;
+}
+
+static unsigned int context_hash_function(void *data)
+{
+    struct service_context_s *c=(struct service_context_s *) data;
+    return calculate_context_hash(c);
+}
+
+int initialize_context_hashtable()
+{
+    unsigned int error=0;
+    return initialize_group(&context_hash, context_hash_function, 128, &error);
+}
+
+void free_service_context(struct service_context_s *context);
+
+static void _free_service_context(void *d)
+{
+    free_service_context((struct service_context_s *) d);
+}
+
+void free_context_hashtable()
+{
+    free_group(&context_hash, _free_service_context);
+}
+
+struct service_context_s *search_service_context(dev_t unique)
+{
+    struct simple_lock_s lock;
+    struct service_context_s *c=NULL;
+    unsigned int hashvalue=unique % context_hash.len;
+    void *index=NULL;
+
+    init_rlock_hashtable(&context_hash, &lock);
+    lock_hashtable(&lock);
+
+    c=(struct service_context_s *) get_next_hashed_value(&context_hash, &index, hashvalue);
+
+    while (c) {
+
+	if (c->unique==unique) break;
+	c=(struct service_context_s *) get_next_hashed_value(&context_hash, &index, hashvalue);
+
+    }
+
+    unlock_hashtable(&lock);
+
+    return c;
+}
+
+void add_service_context_hash(struct service_context_s *c)
+{
+    c->unique=unique;
+    unique++;
+    add_data_to_hash(&context_hash, (void *) c);
+}
+void remove_service_context_hash(struct service_context_s *c)
+{
+    remove_data_from_hash(&context_hash, (void *) c);
+}
+void init_rlock_service_context_hash(struct simple_lock_s *l)
+{
+    init_rlock_hashtable(&context_hash, l);
+}
+void init_wlock_service_context_hash(struct simple_lock_s *l)
+{
+    init_wlock_hashtable(&context_hash, l);
+}
+int lock_service_context_hash(struct simple_lock_s *l)
+{
+    return lock_hashtable(l);
+}
+int unlock_service_context_hash(struct simple_lock_s *l)
+{
+    return unlock_hashtable(l);
+}
 struct service_context_s *get_service_context(struct context_interface_s *interface)
 {
     return (struct service_context_s *) ( ((char *) interface) - offsetof(struct service_context_s, interface));
@@ -86,6 +171,9 @@ struct bevent_xdata_s *add_context_eventloop(struct context_interface_s *interfa
 
 void free_service_context(struct service_context_s *context)
 {
+    struct simple_lock_s wlock;
+
+    logoutput("free_service_context: free context");
 
     if (context->xdata.fd>0) {
 	unsigned int fd=context->xdata.fd;
@@ -97,7 +185,11 @@ void free_service_context(struct service_context_s *context)
 
     }
 
-    logoutput("free_service_context: free context");
+    init_wlock_service_context_hash(&wlock);
+    lock_service_context_hash(&wlock);
+    remove_service_context_hash(context);
+    unlock_service_context_hash(&wlock);
+
     free(context);
 
 }
@@ -137,6 +229,7 @@ void init_service_context(struct service_context_s *context, unsigned char type,
 
     context->flags=0;
     context->type=0;
+    context->unique=0;
     memset(context->name, '\0', sizeof(context->name));
     if (name) strncpy(context->name, name, sizeof(context->name));
     context->fscount=0;
@@ -171,14 +264,16 @@ struct service_context_s *create_service_context(struct workspace_mount_s *works
     context=malloc(sizeof(struct service_context_s));
 
     if (context) {
+	struct simple_lock_s wlock;
 
 	init_service_context(context, type, NULL);
-	if (workspace) {
+	context->workspace=workspace;
+	if (workspace) add_list_element_last(&workspace->contexes, &context->list);
 
-	    context->workspace=workspace;
-	    add_list_element_last(&workspace->contexes, &context->list);
-
-	}
+	init_wlock_service_context_hash(&wlock);
+	lock_service_context_hash(&wlock);
+	add_service_context_hash(context);
+	unlock_service_context_hash(&wlock);
 
     }
 
@@ -242,37 +337,19 @@ struct beventloop_s *get_beventloop_ctx(void *ctx)
 void add_inode_context(struct service_context_s *context, struct inode_s *inode)
 {
     struct entry_s *parent=inode->alias->parent;
-    struct inode_s *parent_inode=parent->inode;
+    struct inode_s *pinode=parent->inode;
+    uint64_t ino=(pinode) ? pinode->st.st_ino : 0;
 
     add_inode_hashtable(inode, increase_inodes_workspace, (void *) context->workspace);
-    // logoutput("add_inode_context: parent inode %s", (parent_inode) ? "defined" : "notdefined");
-
-    // if (parent_inode) {
-
-	// logoutput("add_inode_context: p ino %li flags %i", (long) parent_inode->ino, parent_inode->fs->flags);
-	// logoutput("add_inode_context: use fs %s", (parent_inode->fs->type.dir.use_fs) ? "defined" : "notdefined");
-
-    // }
-
-    (* parent_inode->fs->type.dir.use_fs)(context, inode);
+    logoutput("add_inode_context: parent inode %li", ino);
+    (* pinode->fs->type.dir.use_fs)(context, inode);
+    inode->st.st_dev=context->unique;
 
 }
 
 struct service_context_s *get_container_context(struct list_element_s *list)
 {
     return (list) ? (struct service_context_s *) ( ((char *) list) - offsetof(struct service_context_s, list)) : NULL;
-}
-
-struct inode_link_s *get_inode_link(struct inode_s *inode, struct inode_link_s *link)
-{
-    memcpy(link, &inode->link, sizeof(struct inode_link_s));
-    return link;
-}
-
-void set_inode_link(struct inode_s *inode, unsigned int type, void *ptr)
-{
-    inode->link.type=type;
-    inode->link.link.ptr=ptr;
 }
 
 void translate_context_host_address(struct host_address_s *host, char **target)

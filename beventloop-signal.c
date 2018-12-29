@@ -110,6 +110,8 @@ static int add_signalhandler(struct beventloop_s *loop, void (* cb) (struct beve
     struct bevent_xdata_s *xdata=NULL;
     int fd=0;
 
+    logoutput("add_signalhandler");
+
     sigemptyset(&sigset);
 
     sigaddset(&sigset, SIGINT);
@@ -145,7 +147,7 @@ static int add_signalhandler(struct beventloop_s *loop, void (* cb) (struct beve
 
     }
 
-    xdata->data=(void *) xdata;
+    xdata->data=(void *) data;
 
     if (cb) {
 
@@ -176,9 +178,11 @@ int enable_beventloop_signal(struct beventloop_s *loop, void (* cb) (struct beve
 {
     int result=0;
 
+    logoutput("enable_beventloop_signal");
+
     if (! loop) loop=get_mainloop();
 
-    if (! (loop->options & BEVENTLOOP_OPTION_SIGNAL)) {
+    if ((loop->options & BEVENTLOOP_OPTION_SIGNAL)==0) {
 
 	result=add_signalhandler(loop, cb, data, error);
 

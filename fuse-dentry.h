@@ -17,8 +17,8 @@
 
 */
 
-#ifndef SB_COMMON_UTILS_ENTRY_MANAGEMENT_H
-#define SB_COMMON_UTILS_ENTRY_MANAGEMENT_H
+#ifndef SB_COMMON_UTILS_FUSE_DENTRY_H
+#define SB_COMMON_UTILS_FUSE_DENTRY_H
 
 #include <linux/fuse.h>
 #include "workspace-interface.h"

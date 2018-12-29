@@ -46,7 +46,7 @@
 #include "workerthreads.h"
 #include "beventloop.h"
 
-#include "entry-management.h"
+#include "fuse-dentry.h"
 
 #include "options.h"
 #include "utils.h"

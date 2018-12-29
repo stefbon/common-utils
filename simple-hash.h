@@ -16,6 +16,7 @@
   along with this program; if not, write to the Free Software
   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
+
 */
 #ifndef SB_COMMON_UTILS_SIMPLE_HASH_H
 #define SB_COMMON_UTILS_SIMPLE_HASH_H
@@ -38,7 +39,7 @@ struct simple_hash_s {
     struct list_header_s 	*hash;
 };
 
-/*1 prototypes */
+/* prototypes */
 
 int initialize_group(struct simple_hash_s *group, unsigned int (*hashfunction) (void *data), unsigned int len, unsigned int *error);
 void free_group(struct simple_hash_s *group, void (*free_data) (void *data));

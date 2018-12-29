@@ -17,8 +17,8 @@
 
 */
 
-#ifndef SB_COMMON_UTILS_ENTRY_UTILS_H
-#define SB_COMMON_UTILS_ENTRY_UTILS_H
+#ifndef SB_COMMON_UTILS_FUSE_UTILS_H
+#define SB_COMMON_UTILS_FUSE_UTILS_H
 
 struct create_entry_s {
     struct name_s			*name;
@@ -64,22 +64,11 @@ struct entry_s *insert_entry_batch(struct directory_s *directory, struct entry_s
 struct directory_s *_remove_directory(struct inode_s *inode, unsigned int *error);
 struct directory_s *remove_directory(struct inode_s *inode, unsigned int *error);
 
-struct simple_lock_s *create_rlock_directory(struct inode_s *inode);
-struct simple_lock_s *create_wlock_directory(struct inode_s *inode);
-int rlock_directory(struct inode_s *inode, struct simple_lock_s *lock);
-int wlock_directory(struct inode_s *inode, struct simple_lock_s *lock);
-int lock_directory(struct inode_s *inode, struct simple_lock_s *lock);
-int unlock_directory(struct inode_s *inode, struct simple_lock_s *lock);
-int upgradelock_directory(struct inode_s *inode, struct simple_lock_s *lock);
-int prelock_directory(struct inode_s *inode, struct simple_lock_s *lock);
-
 void init_directory_calls();
 struct directory_s *get_dummy_directory();
-
-struct pathcalls_s *get_pathcalls(struct inode_s *inode);
+struct pathcalls_s *get_pathcalls(struct directory_s *d);
 
 void init_create_entry(struct create_entry_s *ce, struct name_s *n, struct entry_s *p, struct directory_s *d, struct fuse_opendir_s *fo, struct service_context_s *c, struct stat *st, void *ptr);
-
 struct entry_s *create_entry_extended(struct create_entry_s *ce);
 struct entry_s *create_entry_extended_batch(struct create_entry_s *ce);
 

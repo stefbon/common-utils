@@ -49,9 +49,9 @@
 #include "options.h"
 #include "utils.h"
 
-#include "entry-management.h"
-#include "directory-management.h"
-#include "entry-utils.h"
+#include "fuse-dentry.h"
+#include "fuse-directory.h"
+#include "fuse-utils.h"
 
 #include "simple-list.h"
 #include "simple-hash.h"

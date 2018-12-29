@@ -17,8 +17,8 @@
 
 */
 
-#ifndef SB_COMMON_UTILS_DIRECTORY_MANAGEMENT_H
-#define SB_COMMON_UTILS_DIRECTORY_MANAGEMENT_H
+#ifndef SB_COMMON_UTILS_FUSE_DIRECTORY_H
+#define SB_COMMON_UTILS_FUSE_DIRECTORY_H
 
 #include "simple-locking.h"
 
@@ -47,15 +47,8 @@ struct dops_s {
     struct entry_s 			*(*find_entry_batch)(struct directory_s *directory, struct name_s *xname, unsigned int *error);
     void 				(*remove_entry_batch)(struct directory_s *directory, struct entry_s *entry, unsigned int *error);
     struct entry_s 			*(*insert_entry_batch)(struct directory_s *directory, struct entry_s *entry, unsigned int *error, unsigned short flags);
-    struct simple_lock_s 		*(* create_rlock)(struct inode_s *inode);
-    struct simple_lock_s 		*(* create_wlock)(struct inode_s *inode);
-    int					(* rlock)(struct inode_s *inode, struct simple_lock_s *lock);
-    int					(* wlock)(struct inode_s *inode, struct simple_lock_s *lock);
-    int					(* lock)(struct inode_s *inode, struct simple_lock_s *lock);
-    int					(* unlock)(struct inode_s *inode, struct simple_lock_s *lock);
-    int					(* upgradelock)(struct inode_s *inode, struct simple_lock_s *lock);
-    int					(* prelock)(struct inode_s *inode, struct simple_lock_s *lock);
-    struct pathcalls_s 			*(*get_pathcalls)(struct inode_s *inode);
+    void				(* get_inode_link)(struct directory_s *directory, struct inode_s *inode, struct inode_link_s **link);
+    struct pathcalls_s 			*(*get_pathcalls)(struct directory_s *d);
 };
 
 struct directory_s {
@@ -77,13 +70,17 @@ struct directory_s {
 int init_directory(struct directory_s *directory, unsigned int *error);
 struct directory_s *_create_directory(struct inode_s *inode, void (* init_cb)(struct directory_s *directory), unsigned int *error);
 
-int get_directory_link(struct inode_s *inode, struct inode_link_s *link);
+struct directory_s *search_directory(struct inode_s *inode);
+
+struct directory_s *get_directory_dump(struct inode_s *inode);
+void set_directory_dump(struct inode_s *inode, struct directory_s *d);
+
 struct directory_s *get_directory(struct inode_s *inode);
 
 int get_inode_link_directory(struct inode_s *inode, struct inode_link_s *link);
 void set_inode_link_directory(struct inode_s *inode, struct inode_link_s *link);
 
-void _add_directory_hashtable(struct directory_s *directory);
+//void _add_directory_hashtable(struct directory_s *directory);
 void _remove_directory_hashtable(struct directory_s *directory);
 
 void free_directory(struct directory_s *directory);
@@ -92,16 +89,16 @@ void destroy_directory(struct directory_s *directory);
 void init_directory_readlock(struct directory_s *directory, struct simple_lock_s *lock);
 void init_directory_writelock(struct directory_s *directory, struct simple_lock_s *lock);
 
-struct simple_lock_s *_create_rlock_directory(struct directory_s *directory);
-struct simple_lock_s *_create_wlock_directory(struct directory_s *directory);
+struct simple_lock_s *create_rlock_directory(struct directory_s *directory);
+struct simple_lock_s *create_wlock_directory(struct directory_s *directory);
 
-int _rlock_directory(struct directory_s *directory, struct simple_lock_s *lock);
-int _wlock_directory(struct directory_s *directory, struct simple_lock_s *lock);
+int rlock_directory(struct directory_s *directory, struct simple_lock_s *lock);
+int wlock_directory(struct directory_s *directory, struct simple_lock_s *lock);
 
-int _lock_directory(struct directory_s *directory, struct simple_lock_s *lock);
-int _unlock_directory(struct directory_s *directory, struct simple_lock_s *lock);
-int _upgradelock_directory(struct directory_s *directory, struct simple_lock_s *lock);
-int _prelock_directory(struct directory_s *directory, struct simple_lock_s *lock);
+int lock_directory(struct directory_s *directory, struct simple_lock_s *lock);
+int unlock_directory(struct directory_s *directory, struct simple_lock_s *lock);
+int upgradelock_directory(struct directory_s *directory, struct simple_lock_s *lock);
+int prelock_directory(struct directory_s *directory, struct simple_lock_s *lock);
 
 int lock_pathcalls(struct pathcalls_s *pathcalls);
 int unlock_pathcalls(struct pathcalls_s *pathcalls);

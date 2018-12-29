@@ -47,9 +47,9 @@
 #include "beventloop.h"
 #include "utils.h"
 
-#include "entry-management.h"
-#include "directory-management.h"
-#include "entry-utils.h"
+#include "fuse-dentry.h"
+#include "fuse-directory.h"
+#include "fuse-utils.h"
 
 #include "fuse-fs.h"
 #include "workspaces.h"
@@ -61,10 +61,25 @@
 #include "fuse-fs-virtual.h"
 #include "fuse-context-fs.h"
 
+static void init_service_fs();
+
 static struct fuse_fs_s service_dir_fs;
 static struct fuse_fs_s service_nondir_fs;
-static unsigned char done=0;
 static pthread_mutex_t done_mutex=PTHREAD_MUTEX_INITIALIZER;
+static unsigned char done=0;
+
+static void done_check_init()
+{
+    pthread_mutex_lock(&done_mutex);
+
+    if (done==0) {
+	init_service_fs();
+	done=1;
+    }
+
+    pthread_mutex_unlock(&done_mutex);
+
+}
 
 static void service_fs_forget(struct inode_s *inode)
 {
@@ -87,11 +102,7 @@ static void service_fs_lookup(struct service_context_s *context, struct fuse_req
     logoutput("service_fs_lookup");
 
     init_fuse_path(&fpath, path, pathlen);
-
-    pathcalls=get_pathcalls(pinode);
-    logoutput("service_fs_lookup: A1");
     directory=get_directory(pinode);
-    logoutput("service_fs_lookup: A2");
 
     if (! directory) {
 
@@ -100,6 +111,7 @@ static void service_fs_lookup(struct service_context_s *context, struct fuse_req
 
     }
 
+    pathcalls=get_pathcalls(directory);
     pathinfo.len=add_name_path(&fpath, &xname);
 
     lock_pathcalls(pathcalls);
@@ -150,15 +162,12 @@ static void service_fs_getattr(struct service_context_s *context, struct fuse_re
 
     if (S_ISDIR(inode->st.st_mode)) {
 
-	pathcalls=get_pathcalls(inode);
 	directory=get_directory(inode);
 
     } else {
 	struct entry_s *parent=entry->parent;
 
 	pathinfo.len=add_name_path(&fpath, &entry->name);
-
-	pathcalls=get_pathcalls(parent->inode);
 	directory=get_directory(parent->inode);
 
     }
@@ -170,6 +179,7 @@ static void service_fs_getattr(struct service_context_s *context, struct fuse_re
 
     }
 
+    pathcalls=get_pathcalls(directory);
     lock_pathcalls(pathcalls);
     pathinfo.len+=(* pathcalls->get_path)(directory, &fpath);
     unlock_pathcalls(pathcalls);
@@ -178,7 +188,6 @@ static void service_fs_getattr(struct service_context_s *context, struct fuse_re
     context=fpath.context;
 
     logoutput("GETATTR %s (thread %i): %s", context->name, (int) gettid(), pathinfo.path);
-
     (* context->fs->getattr)(context, request, inode, &pathinfo);
 
 }
@@ -210,15 +219,12 @@ static void service_fs_setattr(struct service_context_s *context, struct fuse_re
 
     if (S_ISDIR(inode->st.st_mode)) {
 
-	pathcalls=get_pathcalls(inode);
 	directory=get_directory(inode);
 
     } else {
 	struct entry_s *parent=inode->alias->parent;
 
 	pathinfo.len=add_name_path(&fpath, &entry->name);
-
-	pathcalls=get_pathcalls(parent->inode);
 	directory=get_directory(parent->inode);
 
     }
@@ -230,6 +236,7 @@ static void service_fs_setattr(struct service_context_s *context, struct fuse_re
 
     }
 
+    pathcalls=get_pathcalls(directory);
     lock_pathcalls(pathcalls);
     pathinfo.len+=(* pathcalls->get_path)(directory, &fpath);
     unlock_pathcalls(pathcalls);
@@ -238,7 +245,6 @@ static void service_fs_setattr(struct service_context_s *context, struct fuse_re
     context=fpath.context;
 
     logoutput("SETATTR %s (thread %i): %s", context->name, (int) gettid(), pathinfo.path);
-
     (* context->fs->setattr)(context, request, inode, &pathinfo, st, set);
 }
 
@@ -286,7 +292,6 @@ static void service_fs_mkdir(struct service_context_s *context, struct fuse_requ
 
     if (entry && error==0) {
 	struct pathcalls_s *pathcalls=NULL;
-	struct directory_s *directory=NULL;
 	unsigned int pathlen=get_pathmax(context->workspace) + 1 + xname.len;
 	char path[pathlen + 1];
 	struct pathinfo_s pathinfo=PATHINFO_INIT;
@@ -295,16 +300,7 @@ static void service_fs_mkdir(struct service_context_s *context, struct fuse_requ
 
 	init_fuse_path(&fpath, path, pathlen);
 
-	pathcalls=get_pathcalls(pinode);
-	directory=get_directory(pinode);
-
-	if (! directory) {
-
-	    reply_VFS_error(request, ENOMEM);
-	    return;
-
-	}
-
+	pathcalls=get_pathcalls(directory);
 	pathinfo.len=add_name_path(&fpath, &xname);
 
 	lock_pathcalls(pathcalls);
@@ -315,7 +311,6 @@ static void service_fs_mkdir(struct service_context_s *context, struct fuse_requ
 	context=fpath.context;
 
 	logoutput("MKDIR %s (thread %i): %s", context->name, (int) gettid(), pathinfo.path);
-
 	(* context->fs->mkdir)(context, request, entry, &pathinfo, &st);
 
     } else {
@@ -379,7 +374,6 @@ static void service_fs_mknod(struct service_context_s *context, struct fuse_requ
 
     if (entry && error==0) {
 	struct pathcalls_s *pathcalls=NULL;
-	struct directory_s *directory=NULL;
 	unsigned int pathlen=get_pathmax(context->workspace) + 1 + xname.len;
 	char path[pathlen + 1];
 	struct pathinfo_s pathinfo=PATHINFO_INIT;
@@ -388,16 +382,7 @@ static void service_fs_mknod(struct service_context_s *context, struct fuse_requ
 
 	init_fuse_path(&fpath, path, pathlen);
 
-	pathcalls=get_pathcalls(pinode);
-	directory=get_directory(pinode);
-
-	if (! directory) {
-
-	    reply_VFS_error(request, ENOMEM);
-	    return;
-
-	}
-
+	pathcalls=get_pathcalls(directory);
 	pathinfo.len=add_name_path(&fpath, &xname);
 
 	lock_pathcalls(pathcalls);
@@ -408,7 +393,6 @@ static void service_fs_mknod(struct service_context_s *context, struct fuse_requ
 	context=fpath.context;
 
 	logoutput("MKNOD %s (thread %i): %s", context->name, (int) gettid(), pathinfo.path);
-
 	(* context->fs->mkdir)(context, request, entry, &pathinfo, &st);
 
     } else {
@@ -453,22 +437,12 @@ static void service_fs_symlink(struct service_context_s *context, struct fuse_re
 	struct pathinfo_s pathinfo=PATHINFO_INIT;
 	unsigned int pathlen=get_pathmax(context->workspace) + xname.len + 1;
 	char path[pathlen + 1];
-	struct directory_s *directory=NULL;
 	struct fuse_path_s fpath;
 	char *remote_target=NULL;
 
 	init_fuse_path(&fpath, path, pathlen);
 
-	pathcalls=get_pathcalls(pinode);
-	directory=get_directory(pinode);
-
-	if (! directory) {
-
-	    reply_VFS_error(request, ENOMEM);
-	    return;
-
-	}
-
+	pathcalls=get_pathcalls(directory);
 	pathinfo.len=add_name_path(&fpath, &xname);
 
 	lock_pathcalls(pathcalls);
@@ -520,8 +494,6 @@ static void service_fs_unlink(struct service_context_s *context, struct fuse_req
 	struct fuse_path_s fpath;
 
 	init_fuse_path(&fpath, path, pathlen);
-
-	pathcalls=get_pathcalls(pinode);
 	directory=get_directory(pinode);
 
 	if (! directory) {
@@ -533,6 +505,7 @@ static void service_fs_unlink(struct service_context_s *context, struct fuse_req
 
 	pathinfo.len=add_name_path(&fpath, &xname);
 
+	pathcalls=get_pathcalls(directory);
 	lock_pathcalls(pathcalls);
 	pathinfo.len+=(* pathcalls->get_path)(directory, &fpath);
 	unlock_pathcalls(pathcalls);
@@ -541,7 +514,6 @@ static void service_fs_unlink(struct service_context_s *context, struct fuse_req
 	context=fpath.context;
 
 	logoutput("UNLINK %s (thread %i) %s", context->name, (int) gettid(), pathinfo.path);
-
 	(* context->fs->unlink)(context, request, &entry, &pathinfo);
 
     } else {
@@ -569,30 +541,24 @@ static void service_fs_rmdir(struct service_context_s *context, struct fuse_requ
 	struct pathinfo_s pathinfo=PATHINFO_INIT;
 	unsigned int pathlen=get_pathmax(context->workspace) + xname.len + 1;
 	char path[pathlen + 1];
-	struct directory_s *directory=NULL, *sub_directory=NULL;
+	struct directory_s *directory=NULL;
 	struct fuse_path_s fpath;
 
-	sub_directory=get_directory(entry->inode);
+	/* check it's empty */
 
-	if (sub_directory && sub_directory->count>0) {
+	directory=get_directory_dump(entry->inode);
+
+	if (directory && directory->count>0) {
 
 	    reply_VFS_error(request, ENOTEMPTY);
 	    return;
 
 	}
 
+	directory=get_directory_dump(pinode);
 	init_fuse_path(&fpath, path, pathlen);
 
-	pathcalls=get_pathcalls(pinode);
-	directory=get_directory(pinode);
-
-	if (! directory) {
-
-	    reply_VFS_error(request, ENOMEM);
-	    return;
-
-	}
-
+	pathcalls=get_pathcalls(directory);
 	pathinfo.len=add_name_path(&fpath, &xname);
 
 	lock_pathcalls(pathcalls);
@@ -605,7 +571,7 @@ static void service_fs_rmdir(struct service_context_s *context, struct fuse_requ
 	logoutput("RMDIR %s (thread %i) %s", context->name, (int) gettid(), pathinfo.path);
 
 	(* context->fs->rmdir)(context, request, &entry, &pathinfo);
-	if (entry==NULL && sub_directory) destroy_directory(sub_directory);
+	if (entry==NULL && directory) destroy_directory(directory);
 
     } else {
 
@@ -633,8 +599,6 @@ static void service_fs_readlink(struct service_context_s *context, struct fuse_r
     logoutput("service_fs_readlink: pathlen %i)", pathlen);
 
     init_fuse_path(&fpath, path, pathlen);
-
-    pathcalls=get_pathcalls(parent->inode);
     directory=get_directory(parent->inode);
 
     if (! directory) {
@@ -645,7 +609,7 @@ static void service_fs_readlink(struct service_context_s *context, struct fuse_r
     };
 
     pathinfo.len=add_name_path(&fpath, &entry->name);
-
+    pathcalls=get_pathcalls(directory);
     lock_pathcalls(pathcalls);
     pathinfo.len+=(* pathcalls->get_path)(directory, &fpath);
     unlock_pathcalls(pathcalls);
@@ -654,7 +618,6 @@ static void service_fs_readlink(struct service_context_s *context, struct fuse_r
     context=fpath.context;
 
     logoutput("READLINK %s (thread %i) %s", context->name, (int) gettid(), pathinfo.path);
-
     (* context->fs->readlink)(context, request, inode, &pathinfo);
 
 }
@@ -676,7 +639,6 @@ static void service_fs_open(struct fuse_openfile_s *openfile, struct fuse_reques
 
     init_fuse_path(&fpath, path, pathlen);
 
-    pathcalls=get_pathcalls(parent->inode);
     directory=get_directory(parent->inode);
 
     if (! directory) {
@@ -688,7 +650,7 @@ static void service_fs_open(struct fuse_openfile_s *openfile, struct fuse_reques
     }
 
     pathinfo.len=add_name_path(&fpath, &entry->name);
-
+    pathcalls=get_pathcalls(directory);
     lock_pathcalls(pathcalls);
     pathinfo.len+=(* pathcalls->get_path)(directory, &fpath);
     unlock_pathcalls(pathcalls);
@@ -698,7 +660,6 @@ static void service_fs_open(struct fuse_openfile_s *openfile, struct fuse_reques
     pathinfo.path=fpath.pathstart;
 
     logoutput("OPEN %s (thread %i): %s", context->name, (int) gettid(), pathinfo.path);
-
     (* context->fs->open)(openfile, request, &pathinfo, flags);
 
 }
@@ -711,7 +672,6 @@ static void service_fs_create(struct fuse_openfile_s *openfile, struct fuse_requ
     unsigned int error=0;
     struct name_s xname={(char *)name, len-1, 0};
     struct directory_s *directory=NULL;
-    struct pathcalls_s *pathcalls=NULL;
     mode_t filetype=(mode & S_IFMT);
     mode_t fileperm=0;
     struct entry_s *entry=NULL;
@@ -740,7 +700,6 @@ static void service_fs_create(struct fuse_openfile_s *openfile, struct fuse_requ
 
     }
 
-    pathcalls=get_pathcalls(openfile->inode);
     directory=get_directory(openfile->inode);
 
     if (! directory) {
@@ -754,14 +713,11 @@ static void service_fs_create(struct fuse_openfile_s *openfile, struct fuse_requ
     parent=openfile->inode->alias;
 
     memset(&st, 0, sizeof(struct stat));
-
     st.st_mode=S_IFREG | fileperm;
     st.st_uid=request->uid;
     st.st_gid=request->gid;
     st.st_size=0;
-
     st.st_blksize=4096; /* get from local config/parameters */
-
     get_current_time(&st.st_atim);
     memcpy(&st.st_mtim, &st.st_atim, sizeof(struct timespec));
     memcpy(&st.st_ctim, &st.st_atim, sizeof(struct timespec));
@@ -776,10 +732,12 @@ static void service_fs_create(struct fuse_openfile_s *openfile, struct fuse_requ
 	char path[pathlen + 1];
 	struct pathinfo_s pathinfo=PATHINFO_INIT;
 	struct fuse_path_s fpath;
+	struct pathcalls_s *pathcalls=NULL;
 
 	init_fuse_path(&fpath, path, pathlen);
 	pathinfo.len=add_name_path(&fpath, &entry->name);
 
+        pathcalls=get_pathcalls(directory);
 	lock_pathcalls(pathcalls);
 	pathinfo.len+=(* pathcalls->get_path)(directory, &fpath);
 	unlock_pathcalls(pathcalls);
@@ -791,7 +749,6 @@ static void service_fs_create(struct fuse_openfile_s *openfile, struct fuse_requ
 	logoutput("CREATE %s (thread %i): %s", context->name, (int) gettid(), pathinfo.path);
 
 	openfile->inode=entry->inode; /* now it's pointing to the right inode */
-
 	(* context->fs->create)(openfile, request, &pathinfo, &st, flags);
 
 	if (openfile->error>0) {
@@ -830,8 +787,6 @@ static void service_fs_opendir(struct fuse_opendir_s *opendir, struct fuse_reque
     struct fuse_path_s fpath;
 
     init_fuse_path(&fpath, path, pathlen);
-
-    pathcalls=get_pathcalls(opendir->inode);
     directory=get_directory(opendir->inode);
 
     if (! directory) {
@@ -842,6 +797,7 @@ static void service_fs_opendir(struct fuse_opendir_s *opendir, struct fuse_reque
 
     }
 
+    pathcalls=get_pathcalls(directory);
     lock_pathcalls(pathcalls);
     pathinfo.len+=(* pathcalls->get_path)(directory, &fpath);
     unlock_pathcalls(pathcalls);
@@ -872,9 +828,9 @@ static void service_fs_setxattr(struct service_context_s *context, struct fuse_r
     struct pathinfo_s pathinfo=PATHINFO_INIT;
     struct fuse_path_s fpath;
 
-    init_fuse_path(&fpath, path, pathlen);
+    logoutput("service_fs_setxattr");
 
-    pathcalls=get_pathcalls(parent->inode);
+    init_fuse_path(&fpath, path, pathlen);
     directory=get_directory(parent->inode);
 
     if (! directory) {
@@ -885,7 +841,7 @@ static void service_fs_setxattr(struct service_context_s *context, struct fuse_r
     }
 
     pathinfo.len=add_name_path(&fpath, &entry->name);
-
+    pathcalls=get_pathcalls(directory);
     lock_pathcalls(pathcalls);
     pathinfo.len+=(* pathcalls->get_path)(directory, &fpath);
     unlock_pathcalls(pathcalls);
@@ -908,9 +864,9 @@ static void service_fs_getxattr(struct service_context_s *context, struct fuse_r
     struct pathinfo_s pathinfo=PATHINFO_INIT;
     struct fuse_path_s fpath;
 
-    init_fuse_path(&fpath, path, pathlen);
+    logoutput("service_fs_getxattr");
 
-    pathcalls=get_pathcalls(parent->inode);
+    init_fuse_path(&fpath, path, pathlen);
     directory=get_directory(parent->inode);
 
     if (! directory) {
@@ -921,15 +877,13 @@ static void service_fs_getxattr(struct service_context_s *context, struct fuse_r
     }
 
     pathinfo.len=add_name_path(&fpath, &entry->name);
-
+    pathcalls=get_pathcalls(directory);
     lock_pathcalls(pathcalls);
     pathinfo.len+=(* pathcalls->get_path)(directory, &fpath);
     unlock_pathcalls(pathcalls);
 
     context=fpath.context;
     pathinfo.path=fpath.pathstart;
-
-    logoutput("service_fs_getxattr");
 
     (* context->fs->getxattr)(context, request, &pathinfo, inode, name, size);
 }
@@ -946,9 +900,9 @@ static void service_fs_listxattr(struct service_context_s *context, struct fuse_
     struct pathinfo_s pathinfo=PATHINFO_INIT;
     struct fuse_path_s fpath;
 
-    init_fuse_path(&fpath, path, pathlen);
+    logoutput("service_fs_listxattr");
 
-    pathcalls=get_pathcalls(parent->inode);
+    init_fuse_path(&fpath, path, pathlen);
     directory=get_directory(parent->inode);
 
     if (! directory) {
@@ -959,7 +913,7 @@ static void service_fs_listxattr(struct service_context_s *context, struct fuse_
     }
 
     pathinfo.len=add_name_path(&fpath, &entry->name);
-
+    pathcalls=get_pathcalls(directory);
     lock_pathcalls(pathcalls);
     pathinfo.len+=(* pathcalls->get_path)(directory, &fpath);
     unlock_pathcalls(pathcalls);
@@ -983,9 +937,10 @@ static void service_fs_removexattr(struct service_context_s *context, struct fus
     struct pathinfo_s pathinfo=PATHINFO_INIT;
     struct fuse_path_s fpath;
 
+    logoutput("service_fs_removexattr");
+
     init_fuse_path(&fpath, path, pathlen);
 
-    pathcalls=get_pathcalls(parent->inode);
     directory=get_directory(parent->inode);
 
     if (! directory) {
@@ -996,7 +951,7 @@ static void service_fs_removexattr(struct service_context_s *context, struct fus
     }
 
     pathinfo.len=add_name_path(&fpath, &entry->name);
-
+    pathcalls=get_pathcalls(directory);
     lock_pathcalls(pathcalls);
     pathinfo.len+=(* pathcalls->get_path)(directory, &fpath);
     unlock_pathcalls(pathcalls);
@@ -1022,8 +977,6 @@ static void service_fs_fsnotify(struct service_context_s *context, struct fuse_r
     struct fuse_path_s fpath;
 
     init_fuse_path(&fpath, path, pathlen);
-
-    pathcalls=get_pathcalls(inode);
     directory=get_directory(inode);
 
     if (! directory) {
@@ -1033,6 +986,7 @@ static void service_fs_fsnotify(struct service_context_s *context, struct fuse_r
 
     }
 
+    pathcalls=get_pathcalls(directory);
     lock_pathcalls(pathcalls);
     pathinfo.len+=(* pathcalls->get_path)(directory, &fpath);
     unlock_pathcalls(pathcalls);
@@ -1041,7 +995,6 @@ static void service_fs_fsnotify(struct service_context_s *context, struct fuse_r
     context=fpath.context;
 
     logoutput("FSNOTIFY %s (thread %i) %s mask %i", context->name, (int) gettid(), pathinfo.path, mask);
-
     (* context->fs->fsnotify)(context, request, &pathinfo, inode->st.st_ino, mask);
 
 }
@@ -1064,14 +1017,11 @@ static void service_fs_statfs(struct service_context_s *context, struct fuse_req
 
     if (S_ISDIR(inode->st.st_mode)) {
 
-	pathcalls=get_pathcalls(inode);
 	directory=get_directory(inode);
 
     } else {
 
 	pathinfo.len=add_name_path(&fpath, &entry->name);
-
-	pathcalls=get_pathcalls(parent->inode);
 	directory=get_directory(parent->inode);
 
     }
@@ -1083,6 +1033,7 @@ static void service_fs_statfs(struct service_context_s *context, struct fuse_req
 
     }
 
+    pathcalls=get_pathcalls(directory);
     lock_pathcalls(pathcalls);
     pathinfo.len+=(* pathcalls->get_path)(directory, &fpath);
     unlock_pathcalls(pathcalls);
@@ -1091,7 +1042,6 @@ static void service_fs_statfs(struct service_context_s *context, struct fuse_req
     context=fpath.context;
 
     logoutput("STATFS %s (thread %i) %s", context->name, (int) gettid(), pathinfo.path);
-
     (* context->fs->statfs)(context, request, &pathinfo);
 
 }
@@ -1184,14 +1134,7 @@ static void init_service_fs()
 void use_service_fs(struct service_context_s *context, struct inode_s *inode)
 {
 
-    pthread_mutex_lock(&done_mutex);
-
-    if (done==0) {
-	init_service_fs();
-	done=1;
-    }
-
-    pthread_mutex_unlock(&done_mutex);
+    done_check_init();
 
     if (S_ISDIR(inode->st.st_mode)) {
 

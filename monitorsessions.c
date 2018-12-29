@@ -47,9 +47,9 @@
 
 #include "pathinfo.h"
 #include "beventloop.h"
-#include "entry-management.h"
-#include "directory-management.h"
-#include "entry-utils.h"
+#include "fuse-dentry.h"
+#include "fuse-directory.h"
+#include "fuse-utils.h"
 
 #include "fschangenotify.h"
 #include "monitorsessions.h"

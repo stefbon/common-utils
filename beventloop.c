@@ -82,6 +82,7 @@ static void clear_eventloop(struct beventloop_s *loop)
     memset(loop, 0, sizeof(struct beventloop_s));
 
     loop->status=0;
+    loop->options=0;
     init_list_header(&loop->xdata_list.header, SIMPLE_LIST_TYPE_EMPTY, NULL);
     loop->cb_signal=signal_cb_dummy;
     loop->fd=0;

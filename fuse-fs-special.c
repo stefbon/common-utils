@@ -50,9 +50,9 @@
 
 #include "pathinfo.h"
 #include "utils.h"
-#include "entry-management.h"
-#include "directory-management.h"
-#include "entry-utils.h"
+#include "fuse-dentry.h"
+#include "fuse-directory.h"
+#include "fuse-utils.h"
 #include "simple-hash.h"
 
 #include "fuse-interface.h"
@@ -89,10 +89,6 @@ static unsigned int get_special_entry_hash(void *ptr)
 
 static void _fs_special_forget(struct inode_s *inode)
 {
-    struct inode_link_s link;
-
-    fs_get_inode_link(inode, &link);
-
     if (inode->st.st_ino>0) {
 	unsigned int hashvalue=calculate_special_entry_hash(inode->st.st_ino);
 	void *index=NULL;
@@ -101,14 +97,13 @@ static void _fs_special_forget(struct inode_s *inode)
 	struct special_path_s *s=NULL;
 
 	init_wlock_hashtable(&special_entries, &lock);
-
+	lock_hashtable(&lock);
 	ptr=get_next_hashed_value(&special_entries, &index, hashvalue);
 
 	while (ptr) {
 
 	    s=(struct special_path_s *) ptr;
 	    if (s->ino==inode->st.st_ino) break;
-
 	    ptr=get_next_hashed_value(&special_entries, &index, hashvalue);
 	    s=NULL;
 
@@ -153,11 +148,13 @@ static void _fs_special_open(struct fuse_openfile_s *openfile, struct fuse_reque
     unsigned int error=EIO;
     struct inode_s *inode=openfile->inode;
     int fd=0;
-    struct inode_link_s link;
+    struct inode_link_s *link=NULL;
+    struct special_path_s *s=NULL;
 
     fs_get_inode_link(inode, &link);
+    s=(struct special_path_s *) link->link.ptr;
 
-    fd=open((char *) link.link.ptr, flags);
+    fd=open((char *) s->path, flags);
 
     if (fd>0) {
 	struct fuse_open_out open_out;
@@ -289,20 +286,12 @@ void free_special_fs()
 
 void set_fs_special(struct inode_s *inode)
 {
-
-    if (! S_ISDIR(inode->st.st_mode)) {
-
-	inode->fs=&fs;
-
-    }
-
+    if (! S_ISDIR(inode->st.st_mode)) inode->fs=&fs;
 }
 
 void create_desktopentry_file(char *path, struct entry_s *parent, struct workspace_mount_s *workspace)
 {
     struct stat st;
-
-    // logoutput("create_desktopentry_file: path %s", path);
 
     if (lstat(path, &st)==0 && S_ISREG(st.st_mode)) {
 	struct name_s xname;
@@ -313,8 +302,6 @@ void create_desktopentry_file(char *path, struct entry_s *parent, struct workspa
 	xname.len=strlen(xname.name);
 	calculate_nameindex(&xname);
 
-	// logoutput("create_desktopentry_file: A");
-
 	struct entry_s *entry=_fs_common_create_entry_unlocked(workspace, directory, &xname, &st, 0, 0, &error);
 
 	if (entry) {
@@ -322,18 +309,16 @@ void create_desktopentry_file(char *path, struct entry_s *parent, struct workspa
 
 	    if (s) {
 		struct simple_lock_s lock;
+		struct inode_s *inode=entry->inode;
 
-		// logoutput("create_desktopentry_file: B");
-
-		entry->inode->fs=&fs;
-		s->ino=entry->inode->st.st_ino;
+		inode->fs=&fs;
+		s->ino=inode->st.st_ino;
 		strcpy(s->path, path);
 		s->size=strlen(path);
+		inode->link.link.ptr=(void *)s;
+		inode->link.type=INODE_LINK_TYPE_SPECIAL_ENTRY;
 
 		init_wlock_hashtable(&special_entries, &lock);
-
-		// logoutput("create_desktopentry_file: created entry");
-
 		lock_hashtable(&lock);
 		add_data_to_hash(&special_entries, (void *) s);
 		unlock_hashtable(&lock);

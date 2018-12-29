@@ -336,7 +336,6 @@ static void *find_nonempty_sl_batch(struct skiplist_struct *sl, void *lookupdata
     unsigned int search_row=0;
 
     if (sl->ops.count(sl)==0) goto out;
-
     init_vector(&vector);
 
     /*
@@ -348,7 +347,6 @@ static void *find_nonempty_sl_batch(struct skiplist_struct *sl, void *lookupdata
     */
 
     search=sl->ops.first(sl);
-
     diff=sl->ops.compare(search, lookupdata);
 
     if (diff>0) {
@@ -369,7 +367,6 @@ static void *find_nonempty_sl_batch(struct skiplist_struct *sl, void *lookupdata
     }
 
     search=sl->ops.last(sl);
-
     diff=sl->ops.compare(search, lookupdata);
 
     if (diff<0) {
@@ -509,16 +506,12 @@ static void *find_nonempty_sl_batch(struct skiplist_struct *sl, void *lookupdata
     out:
 
     if (row) *row=search_row;
-
     return found;
 
 }
 
 void *find_sl_batch(struct skiplist_struct *sl, void *lookupdata, unsigned int *row, unsigned int *error)
 {
-
     if (row) *row=0;
-
     return find_nonempty_sl_batch(sl, lookupdata, row, error);
-
 }

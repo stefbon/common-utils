@@ -24,6 +24,20 @@
 
 /* prototypes */
 
+int initialize_context_hashtable();
+void free_context_hashtable();
+
+struct service_context_s *search_service_context(dev_t unique);
+
+void add_service_context_hash(struct service_context_s *c);
+void remove_service_context_hash(struct service_context_s *c);
+
+void init_rlock_service_context_hash(struct simple_lock_s *l);
+void init_wlock_service_context_hash(struct simple_lock_s *l);
+
+int lock_service_context_hash(struct simple_lock_s *l);
+int unlock_service_context_hash(struct simple_lock_s *l);
+
 struct service_context_s *get_service_context(struct context_interface_s *interface);
 struct bevent_xdata_s *add_context_eventloop(struct context_interface_s *interface, unsigned int fd, int (*read_incoming_data)(int fd, void *ptr, uint32_t events), void *ptr, const char *name, unsigned int *error);
 
@@ -44,8 +58,5 @@ struct service_context_s *get_container_context(struct list_element_s *list);
 void translate_context_host_address(struct host_address_s *host, char **target);
 void translate_context_network_port(struct service_address_s *service, unsigned int *port);
 void translate_context_address_network(struct context_address_s *address, char **target, unsigned int *port);
-
-void set_inode_link(struct inode_s *inode, unsigned int type, void *ptr);
-struct inode_link_s *get_inode_link(struct inode_s *inode, struct inode_link_s *link);
 
 #endif
