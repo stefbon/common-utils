@@ -51,6 +51,8 @@
 #define FS_CONNECTION_FLAG_DISCONNECTING				16
 #define FS_CONNECTION_FLAG_DISCONNECTED					32
 
+#define FS_CONNECTION_COMPARE_HOST					1
+
 struct fs_connection_s;
 
 typedef void (* event_cb)(struct fs_connection_s *conn, void *data, uint32_t events);
@@ -125,6 +127,7 @@ struct fs_connection_s *get_next_connection(struct fs_connection_s *s_conn, stru
 int lock_connection_list(struct fs_connection_s *s_conn);
 int unlock_connection_list(struct fs_connection_s *s_conn);
 
-int compare_network_connection(struct fs_connection_s *conn, char *address, unsigned int port);
+int compare_network_address(struct fs_connection_s *conn, char *address, unsigned int port);
+int compare_network_connection(struct fs_connection_s *a, struct fs_connection_s *b, unsigned int flags);
 
 #endif

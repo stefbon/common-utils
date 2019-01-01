@@ -460,39 +460,49 @@ int unlock_connection_list(struct fs_connection_s *s_conn)
     return pthread_mutex_unlock(&s_conn->ops.server.mutex);
 }
 
-int compare_network_connection(struct fs_connection_s *conn, char *address, unsigned int port)
+int compare_network_address(struct fs_connection_s *conn, char *address, unsigned int port)
 {
     struct addrinfo h;
     struct addrinfo *list, *w;
     int result=-1;
+    struct sockaddr *saddr=NULL;
 
     if (conn==NULL || address==NULL) return -1;
 
     memset(&h, 0, sizeof(struct addrinfo));
 
+    h.ai_protocol=0;
+    h.ai_flags=AI_CANONNAME;
+    h.ai_family=AF_UNSPEC;
+    h.ai_socktype = 0;
+    h.ai_canonname=NULL;
+    h.ai_addrlen=0;
+    h.ai_addr=(struct sockaddr *) conn->sokcte;
+    h.ai_next=NULL;
+
     if (conn->family==FS_CONNECTION_FAMILY_IPv4) {
 
 	h.ai_family=AF_INET;
-	h.ai_socktype = SOCK_STREAM;
 
     } else if (conn->family==FS_CONNECTION_FAMILY_IPv6) {
 
 	h.ai_family=AF_INET6;
-	h.ai_socktype = SOCK_STREAM;
-
-    } else {
-
-	h.ai_family=AF_UNSPEC;
-	h.ai_socktype = 0;
 
     }
 
-    h.ai_protocol=0;
-    h.ai_flags=AI_CANONNAME;
-    h.ai_canonname=NULL;
-    h.ai_addrlen=0;
-    h.ai_addr=NULL;
-    h.ai_next=NULL;
+    if (conn->type==FS_CONNECTION_TYPE_TCP) {
+
+	h.ai_socktype = SOCK_STREAM;
+	h.ai_addr = (struct sockaddr *) &conn->socket.inet;
+    	h.ai_addrlen = sizeof(struct sockaddr_in);
+
+    } else if (conn->type==FS_CONNECTION_TYPE_UDP) {
+
+	h.ai_socktype = SOCK_DGRAM;
+	h.ai_addr = (struct sockaddr *) &conn->socket.inet6;
+    	h.ai_addrlen = sizeof(struct sockaddr_in6);
+
+    }
 
     result=getaddrinfo(address, NULL, &h, &list);
 
@@ -529,7 +539,6 @@ int compare_network_connection(struct fs_connection_s *conn, char *address, unsi
 
 	    if (strcmp(tmp, address)==0) {
 
-
 		free(tmp);
 		result=0;
 		goto out;
@@ -548,5 +557,69 @@ int compare_network_connection(struct fs_connection_s *conn, char *address, unsi
 
     free(list);
     return result;
+
+}
+
+static int _compare_network_conn_eq(struct fs_connection_s *a, struct fs_connection_s *b)
+{
+    char hosta[NI_MAXHOST+1];
+    char hostb[NI_MAXHOST+1];
+    struct sockaddr *sa, *sb;
+    int result=-1;
+
+    memset(hosta, '\0', NI_MAXHOST+1);
+    memset(hostb, '\0', NI_MAXHOST+1);
+
+    if (a->family==FS_CONNECTION_FAMILY_IPv6) {
+
+	sa=(struct sockaddr *) &a->socket.inet6;
+	sb=(struct sockaddr *) &b->socket.inet6;
+
+	if (getnameinfo(sa, sizeof(struct socket_inet6), hosta, NI_MAXHOST, NULL, 0, 0)==0 &&
+	    getnameinfo(sb, sizeof(struct socket_inet6), hostb, NI_MAXHOST, NULL, 0, 0)==0) {
+
+	    if (strcmp(hosta, hostb)==0) {
+
+		result=0;
+		goto out;
+
+	    }
+
+	}
+
+    } else if (a->family==FS_CONNECTION_FAMILY_IPv4) {
+
+	sa=(struct sockaddr *) &a->socket.inet;
+	sb=(struct sockaddr *) &b->socket.inet;
+
+	if (getnameinfo(sa, sizeof(struct socket_inet), hosta, NI_MAXHOST, NULL, 0, 0)==0 &&
+	    getnameinfo(sb, sizeof(struct socket_inet), hostb, NI_MAXHOST, NULL, 0, 0)==0) {
+
+	    if (strcmp(hostc, hostb)==0) {
+
+		result=0;
+		goto out;
+
+	    }
+
+	}
+
+    }
+
+    return result;
+
+}
+
+
+int compare_network_connection(struct fs_connection_s *a, struct fs_connection_s *b, unsigned int flags)
+{
+
+    if (flags & FS_CONNECTION_COMPARE_HOST) {
+
+	if ((a->family==FS_CONNECTION_FAMILY_IPv4 || a->family==FS_CONNECTION_FAMILY_IPv6) && a->family==b->family) return _compare_network_conn_eq(a, b);
+
+    }
+
+    return -1;
 
 }
