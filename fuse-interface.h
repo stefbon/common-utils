@@ -44,13 +44,10 @@ struct fuse_request_s {
 void notify_VFS_delete(void *ptr, uint64_t pino, uint64_t ino, char *name, unsigned int len);
 void notify_VFS_create(void *ptr, uint64_t pino, char *name);
 void notify_VFS_change(void *ptr, uint64_t ino, uint32_t mask);
-
 void notify_VFS_fsnotify(void *ptr, uint64_t  ino, uint32_t mask);
 void notify_VFS_fsnotify_child(void *ptr, uint64_t ino, uint32_t mask, struct name_s *xname);
 
 int init_fuse_interface(struct context_interface_s *interface);
-void close_fuse_interface(struct context_interface_s *interface);
-void free_fuse_interface(struct context_interface_s *interface);
 void register_fuse_function(void *ptr, uint32_t opcode, void (* func) (struct fuse_request_s *request));
 
 void disable_masking_userspace(void *ptr);
@@ -60,8 +57,6 @@ unsigned char set_request_interrupted(void *ptr, uint64_t unique);
 unsigned char signal_request_response(void *ptr, uint64_t unique);
 unsigned char signal_request_error(void *ptr, uint64_t unique, unsigned int error);
 unsigned char wait_service_response(void *ptr, struct fuse_request_s *request, struct timespec *timeout);
-
-unsigned char fuse_request_interrupted(struct fuse_request_s *request);
 
 pthread_mutex_t *get_fuse_pthread_mutex(struct context_interface_s *interface);
 pthread_cond_t *get_fuse_pthread_cond(struct context_interface_s *interface);

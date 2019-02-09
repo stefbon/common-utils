@@ -84,29 +84,27 @@ void fs_get_inode_link(struct inode_s *inode, struct inode_link_s **link)
 
 void fuse_fs_forget(struct fuse_request_s *request)
 {
-    struct inode_s *inode=NULL;
-    struct fuse_forget_in *forget_in=(struct fuse_forget_in *)request->buffer;
+    struct fuse_forget_in *forget_in=(struct fuse_forget_in *) request->buffer;
+    struct service_context_s *context=NULL;
 
-    logoutput_notice("FORGET: ino %lli (thread %i)", (long long) request->ino, (int) gettid());
+    logoutput("FORGET: ino %lli (thread %i)", (long long) request->ino, (int) gettid());
 
-    inode=forget_inode(request->interface, request->ino, forget_in->nlookup, NULL, NULL, FORGET_INODE_FLAG_QUEUE | FORGET_INODE_FLAG_REMOVE_ENTRY);
-
+    context=get_service_context(request->interface);
+    queue_inode_2forget(request->ino, context->unique, FORGET_INODE_FLAG_FORGET, forget_in->nlookup);
 }
 
 void fuse_fs_forget_multi(struct fuse_request_s *request)
 {
+    struct service_context_s *context=NULL;
     struct fuse_batch_forget_in *batch_forget_in=(struct fuse_batch_forget_in *)request->buffer;
     struct fuse_forget_one *forgets=(struct fuse_forget_one *) (request->buffer + sizeof(struct fuse_batch_forget_in));
-    struct inode_s *inode;
     unsigned int i=0;
 
-    logoutput_notice("FORGET_MULTI: (thread %i)", (int) gettid());
+    logoutput("FORGET_MULTI: (thread %i) count %i", (int) gettid(), batch_forget_in->count);
 
-    for (i=0; i<batch_forget_in->count; i++) {
+    context=get_service_context(request->interface);
 
-	inode=forget_inode(request->interface, forgets[i].nodeid, forgets[i].nlookup, NULL, NULL, FORGET_INODE_FLAG_QUEUE | FORGET_INODE_FLAG_REMOVE_ENTRY);
-
-    }
+    for (i=0; i<batch_forget_in->count; i++) queue_inode_2forget(forgets[i].nodeid, context->unique, FORGET_INODE_FLAG_FORGET, forgets[i].nlookup);
 
 }
 

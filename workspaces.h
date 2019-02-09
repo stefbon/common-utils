@@ -47,9 +47,12 @@
 
 #define SERVICE_CTX_TYPE_DUMMY			0
 #define SERVICE_CTX_TYPE_WORKSPACE		1
-#define SERVICE_CTX_TYPE_SERVICE		2
+#define SERVICE_CTX_TYPE_FILESYSTEM		2
+#define SERVICE_CTX_TYPE_CONNECTION		3
+#define SERVICE_CTX_TYPE_SOCKET			4
 
 #define SERVICE_CTX_FLAG_REFCOUNTNONZERO	1
+#define SERVICE_CTX_FLAG_DISCONNECTED		2
 
 #define FUSE_USER_STATUS_LEN			32
 
@@ -77,15 +80,15 @@ struct workspace_base_s {
 
 struct service_context_s {
 
-    /* */
+    /* service: fuse mount or filesystem */
+    unsigned char				type;
+
+    /* status */
     unsigned char				flags;
 
     dev_t					unique;
 
-    /* service or fuse mount */
-    unsigned char				type;
-
-    /* name, FUSE, SFTP, SMB, etc */
+    /* name: FUSE, SFTP, SMB, etc */
     char					name[32];
 
     /* unique number per context fs */
@@ -94,14 +97,13 @@ struct service_context_s {
     /* unique number for detected service - corresponds with number of discover service */
     unsigned int				serviceid;
 
-    /* the fs used for this service: pseudo, sftp, webdav, smb ... */
-    struct service_fs_s				*fs;
-
-    /* the inode the service is attached to */
-    struct inode_s 				*inode;
-
-    /* xdata part of eventloop */
-    struct bevent_xdata_s 			xdata;
+    union {
+	struct filesystem_context_s {
+	    struct service_fs_s				*fs; 		/* the fs used for this service: pseudo, sftp, webdav, smb ... */
+	    struct inode_s 				*inode; 	/* the inode the service is attached to */
+	} filesystem;
+	struct fs_connection_s 				*connection;
+    } service;
 
     /* workspace (=mountpoint) this service is part of */
     struct workspace_mount_s			*workspace;

@@ -46,6 +46,7 @@
 struct threadjob_s {
     void 						(*cb) (void *data);
     void 						*data;
+    void						(* free)(struct threadjob_s *job);
     struct list_element_s 				list;
 };
 
@@ -68,6 +69,33 @@ struct workerthreads_queue_s {
 };
 
 static struct workerthreads_queue_s default_queue;
+
+/* default initializer for every new thread
+    tasks:
+    - block any signal, signals are handled by the central eventloop
+
+    this is the first job every thread gets
+*/
+
+static void initialize_new_thread(void *data)
+{
+    sigset_t emptyset;
+
+    sigemptyset(&emptyset);
+    pthread_sigmask(SIG_BLOCK, &emptyset, NULL);
+}
+
+static void free_static_jobs(struct threadjob_s *job)
+{
+    /* static jobs do not need to be freed */
+}
+
+static void free_dynamic_job(struct threadjob_s *job)
+{
+    free(job);
+}
+
+static struct threadjob_s initjob;
 
 /* get the workerthread when list is known
     notice: list may not be null
@@ -93,15 +121,13 @@ static struct threadjob_s *get_next_job(struct workerthreads_queue_s *queue)
     return (list) ? get_containing_job(list) : NULL;
 }
 
-static void process_job(void *threadarg)
+static void process_job(void *ptr)
 {
     struct workerthread_s *thread=NULL;
     struct workerthreads_queue_s *queue=NULL;
-    struct threadjob_s *threadjob=NULL;
+    struct threadjob_s *job=NULL;
 
-    // logoutput("process_job: started %i", gettid());
-
-    thread=(struct workerthread_s *) threadarg;
+    thread=(struct workerthread_s *) ptr;
     if ( ! thread ) return;
 
     queue=thread->queue;
@@ -124,8 +150,6 @@ static void process_job(void *threadarg)
 
 	}
 
-	// logoutput("process_job: thread %i waking up", gettid());
-
 	if (queue->finish==1 && thread->job==NULL) {
 
 	    /* finish every thread */
@@ -142,18 +166,15 @@ static void process_job(void *threadarg)
 
 	/* there must be a job for this thread: otherwise it wouldn't be woken up */
 
-	threadjob=thread->job;
+	job=thread->job;
 	thread->job=NULL;
 
 	pthread_mutex_unlock(&queue->mutex);
 
 	processjob:
 
-	// logoutput("process_job: A");
-
-	(* threadjob->cb) (threadjob->data);
-
-	free(threadjob);
+	(* job->cb) (job->data);
+	(* job->free)(job);
 	thread->job=NULL;
 
 	/* ready: 
@@ -162,10 +183,8 @@ static void process_job(void *threadarg)
 
 	pthread_mutex_lock(&queue->mutex);
 
-	// logoutput("process_job: B");
-
-	threadjob=get_next_job(queue);
-	if (threadjob) {
+	job=get_next_job(queue);
+	if (job) {
 
 	    pthread_mutex_unlock(&queue->mutex);
 	    goto processjob;
@@ -190,19 +209,14 @@ static void process_job(void *threadarg)
 
 	*/
 
-	// logoutput("process_job: C");
-
 	if (list_element_is_last(&thread->list)==0) {
 
-	    // logoutput("process_job: D1");
 	    queue->current=&thread->list;
 
 	} else {
 
 	    /* not already latest
 		move to the latest position */
-
-	    // logoutput("process_job: D2");
 
 	    remove_list_element(&thread->list);
 	    add_list_element_last(&queue->threads, &thread->list);
@@ -231,7 +245,7 @@ static struct workerthread_s *create_workerthread(struct workerthreads_queue_s *
 	thread->threadid=0;
 	thread->queue=queue;
 	init_list_element(&thread->list, NULL);
-	thread->job=NULL;
+	thread->job=&initjob;
 
 	result=pthread_create(&thread->threadid, NULL, (void *) process_job, (void *) thread);
 
@@ -262,8 +276,6 @@ void work_workerthread(void *ptr, int timeout, void (*cb) (void *data), void *da
     struct threadjob_s *job=NULL;
     struct list_header_s *joblist=NULL;
 
-    // logoutput("work_workerthread");
-
     queue=(ptr) ? (struct workerthreads_queue_s *) ptr : &default_queue;
     joblist=&queue->joblist;
 
@@ -290,6 +302,7 @@ void work_workerthread(void *ptr, int timeout, void (*cb) (void *data), void *da
 
     job->cb=cb;
     job->data=data;
+    job->free=free_dynamic_job;
     init_list_element(&job->list, NULL);
 
     pthread_mutex_lock(&queue->mutex);
@@ -301,16 +314,12 @@ void work_workerthread(void *ptr, int timeout, void (*cb) (void *data), void *da
     if (queue->current) {
 	struct workerthread_s *thread=NULL;
 
-	// logoutput("work_workerthread: get thread from stack");
-
 	thread=get_containing_thread(queue->current);
 	thread->job=job;
 	queue->current=get_next_element(&thread->list);
 
 	pthread_cond_broadcast(&queue->cond);
 	pthread_mutex_unlock(&queue->mutex);
-
-	// logoutput("work_workerthread: gtfs ready");
 
 	return;
 
@@ -321,33 +330,16 @@ void work_workerthread(void *ptr, int timeout, void (*cb) (void *data), void *da
     if (queue->nrthreads<queue->max_nrthreads) {
 	struct workerthread_s *thread=NULL;
 
-	// logoutput("work_workerthread: create thread");
-
 	*error=0;
 	thread=create_workerthread(queue, error);
-
-	if (thread==NULL) {
-
-	    // logoutput("work_workerthread: unable to create new thread");
-	    return;
-
-	}
-
-	// logoutput("work_workerthread: A");
+	if (thread==NULL) return;
 
 	add_list_element_last(&queue->threads, &thread->list);
-
-	// logoutput("work_workerthread: B");
-
 	thread->job=job;
 	queue->nrthreads++;
 
-	// logoutput("work_workerthread: C");
-
 	pthread_cond_broadcast(&queue->cond);
 	pthread_mutex_unlock(&queue->mutex);
-
-	// logoutput("work_workerthread: D");
 
 	return;
 
@@ -355,10 +347,7 @@ void work_workerthread(void *ptr, int timeout, void (*cb) (void *data), void *da
 
     /* maximum number of threads: put job on queue */
 
-    // logoutput("work_workerthread: put job on list");
-
     add_list_element_last(joblist, &job->list);
-
     pthread_cond_broadcast(&queue->cond);
     pthread_mutex_unlock(&queue->mutex);
 
@@ -379,6 +368,11 @@ void init_workerthreads(void *ptr)
     queue->nrthreads=0;
     queue->max_nrthreads=6;
     queue->finish=0;
+
+    initjob.cb = initialize_new_thread;
+    initjob.data = NULL;
+    initjob.free = free_static_jobs;
+    init_list_element(&initjob.list, NULL);
 
 }
 

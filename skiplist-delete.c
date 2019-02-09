@@ -90,7 +90,7 @@ static void remove_dirnodes_sl(struct skiplist_struct *sl, struct vector_dirnode
 {
     struct dirnode_struct *dirnode=NULL;
 
-    logoutput_warning("remove_dirnodes_sl");
+    // logoutput_warning("remove_dirnodes_sl");
 
     dirnode=sl->dirnode;
 
@@ -208,15 +208,8 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
     // }
 
     ptr=sl->ops.create_rlock(sl);
-
-    // logoutput("delete_nonempty_sl: A");
-
     if (sl->ops.count(sl)==0) goto unlock;
-
-    // logoutput("delete_nonempty_sl: init");
-
     init_vector(&vector);
-
     search=sl->ops.first(sl);
     search_row=1;
     *error=ENOENT;
@@ -230,8 +223,6 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
 	struct dirnode_struct *next_dirnode=NULL;
 	void *next=NULL;
 
-	// logoutput("delete_nonempty_sl: dn not NULL");
-
 	/* head of the skiplist */
 
 	level=dirnode->level;
@@ -243,8 +234,6 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
 	while (level>=0) {
 
 	    pthread_mutex_lock(&sl->mutex);
-
-	    // logoutput("delete_nonempty_sl: level %i", level);
 
 	    dirnode=vector.lane[level].dirnode;
 	    next_dirnode=dirnode->junction[level].next;
@@ -479,8 +468,6 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
 
     if (found && *error==0) {
 
-	// sl->ops.upgradelock(sl, ptr);
-
 	/* correct the counters and eventually remove the dirnode */
 
 	remove_dirnodes_sl(sl, &vector, found);
@@ -493,12 +480,7 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
 
     unlock:
 
-    // logoutput("delete_nonempty_sl: unlock");
-
     sl->ops.unlock(sl, ptr);
-
-    // logoutput("delete_nonempty_sl: B");
-
     destroy_vector_lanes(&vector);
 
     if (row) *row=search_row;
@@ -522,8 +504,6 @@ static void delete_nonempty_sl(struct skiplist_struct *sl, void *lookupdata, uns
 void delete_sl(struct skiplist_struct *sl, void *lookupdata, unsigned int *row, unsigned int *error)
 {
     unsigned int count=0;
-
-    logoutput_warning("delete_sl");
 
     while(count<10) {
 
@@ -712,7 +692,6 @@ static void delete_nonempty_sl_batch(struct skiplist_struct *sl, void *lookupdat
 	*/
 
 	remove_dirnodes_sl(sl, &vector, found);
-
 	sl->ops.delete(found, sl);
 
     }

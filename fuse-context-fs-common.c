@@ -60,89 +60,100 @@
 
 void service_fs_read(struct fuse_openfile_s *openfile, struct fuse_request_s *request, size_t size, off_t off, unsigned int flags, uint64_t lock_owner)
 {
+    struct service_fs_s *fs=openfile->context->service.filesystem.fs;
     logoutput("READ %s (thread %i)", openfile->context->name, (int) gettid());
-    (* openfile->context->fs->read)(openfile, request, size, off, flags, lock_owner);
+    (* fs->read)(openfile, request, size, off, flags, lock_owner);
 }
 
 /* WRITE */
 
 void service_fs_write(struct fuse_openfile_s *openfile, struct fuse_request_s *request, const char *buff, size_t size, off_t off, unsigned int flags, uint64_t lock_owner)
 {
+    struct service_fs_s *fs=openfile->context->service.filesystem.fs;
     logoutput("WRITE %s (thread %i)", openfile->context->name, (int) gettid());
-    (* openfile->context->fs->write)(openfile, request, buff, size, off, flags, lock_owner);
+    (* fs->write)(openfile, request, buff, size, off, flags, lock_owner);
 }
 
 /* FSYNC */
 
 void service_fs_fsync(struct fuse_openfile_s *openfile, struct fuse_request_s *request, unsigned char datasync)
 {
+    struct service_fs_s *fs=openfile->context->service.filesystem.fs;
     logoutput("FSYNC %s (thread %i)", openfile->context->name, (int) gettid());
-    (* openfile->context->fs->fsync)(openfile, request, datasync);
+    (* fs->fsync)(openfile, request, datasync);
 }
 
 /* FLUSH */
 
 void service_fs_flush(struct fuse_openfile_s *openfile, struct fuse_request_s *request, uint64_t lockowner)
 {
+    struct service_fs_s *fs=openfile->context->service.filesystem.fs;
     logoutput("FLUSH %s (thread %i) lockowner %li", openfile->context->name, (int) gettid(), (unsigned long int) lockowner);
-    (* openfile->context->fs->flush)(openfile, request, lockowner);
+    (* fs->flush)(openfile, request, lockowner);
 }
 
 /* FGETATTR */
 
 void service_fs_fgetattr(struct fuse_openfile_s *openfile, struct fuse_request_s *request)
 {
+    struct service_fs_s *fs=openfile->context->service.filesystem.fs;
     logoutput("FGETATTR %s (thread %i)", openfile->context->name, (int) gettid());
-    (* openfile->context->fs->fgetattr)(openfile, request);
+    (* fs->fgetattr)(openfile, request);
 }
 
 /* FSETATTR */
 
 void service_fs_fsetattr(struct fuse_openfile_s *openfile, struct fuse_request_s *request, struct stat *st, int set)
 {
+    struct service_fs_s *fs=openfile->context->service.filesystem.fs;
     logoutput("FSETATTR %s (thread %i)", openfile->context->name, (int) gettid());
-    (* openfile->context->fs->fsetattr)(openfile, request, st, set);
+    (* fs->fsetattr)(openfile, request, st, set);
 }
 
 /* RELEASE */
 
 void service_fs_release(struct fuse_openfile_s *openfile, struct fuse_request_s *request, unsigned int flags, uint64_t lockowner)
 {
+    struct service_fs_s *fs=openfile->context->service.filesystem.fs;
     logoutput("RELEASE %s (thread %i) lockowner %li", openfile->context->name, (int) gettid(), (unsigned long int) lockowner);
-    (* openfile->context->fs->release)(openfile, request, flags, lockowner);
+    (* fs->release)(openfile, request, flags, lockowner);
 }
 
 /* GETLOCK (bytelock) */
 
 void service_fs_getlock(struct fuse_openfile_s *openfile, struct fuse_request_s *request, struct flock *flock)
 {
+    struct service_fs_s *fs=openfile->context->service.filesystem.fs;
     logoutput("GETLOCK %s (thread %i)", openfile->context->name, (int) gettid());
     reply_VFS_error(request, ENOSYS);
-    (* openfile->context->fs->getlock)(openfile, request, flock);
+    // (* fs->getlock)(openfile, request, flock);
 }
 
 /* SETLOCK (bytelock) */
 
 void service_fs_setlock(struct fuse_openfile_s *openfile, struct fuse_request_s *request, struct flock *flock)
 {
+    struct service_fs_s *fs=openfile->context->service.filesystem.fs;
     logoutput("SETLOCK %s (thread %i)", openfile->context->name, (int) gettid());
     reply_VFS_error(request, ENOSYS);
-    (* openfile->context->fs->setlock)(openfile, request, flock);
+    // (* fs->setlock)(openfile, request, flock);
 }
 
 /* SETLOCKW (bytelock) */
 
 void service_fs_setlockw(struct fuse_openfile_s *openfile, struct fuse_request_s *request, struct flock *flock)
 {
+    struct service_fs_s *fs=openfile->context->service.filesystem.fs;
     logoutput("SETLOCKW %s (thread %i)", openfile->context->name, (int) gettid());
     reply_VFS_error(request, ENOSYS);
-    (* openfile->context->fs->setlockw)(openfile, request, flock);
+    (* fs->setlockw)(openfile, request, flock);
 }
 
 /* FLOCK (filelock) */
 
 void service_fs_flock(struct fuse_openfile_s *openfile, struct fuse_request_s *request, unsigned char type)
 {
+    struct service_fs_s *fs=openfile->context->service.filesystem.fs;
 
     logoutput("FLOCK %s (thread %i) lock %i:%i", openfile->context->name, (int) gettid(), openfile->flock, type);
     reply_VFS_error(request, ENOSYS);
@@ -158,7 +169,7 @@ void service_fs_flock(struct fuse_openfile_s *openfile, struct fuse_request_s *r
 	previous lock is in openfile->flock
     */
 
-    (* openfile->context->fs->flock)(openfile, request, type);
+    // (* openfile->context->fs->flock)(openfile, request, type);
 
 }
 
@@ -166,24 +177,27 @@ void service_fs_flock(struct fuse_openfile_s *openfile, struct fuse_request_s *r
 
 void service_fs_readdir(struct fuse_opendir_s *opendir, struct fuse_request_s *request, size_t size, off_t offset)
 {
+    struct service_fs_s *fs=opendir->context->service.filesystem.fs;
     logoutput("READDIR %s (thread %i)", opendir->context->name, (int) gettid());
-    (* opendir->context->fs->readdir)(opendir, request, size, offset);
+    (* fs->readdir)(opendir, request, size, offset);
 }
 
 /* READDIRPLUS */
 
 void service_fs_readdirplus(struct fuse_opendir_s *opendir, struct fuse_request_s *request, size_t size, off_t offset)
 {
+    struct service_fs_s *fs=opendir->context->service.filesystem.fs;
     logoutput("READDIRPLUS %s (thread %i)", opendir->context->name, (int) gettid());
-    (* opendir->context->fs->readdirplus)(opendir, request, size, offset);
+    (* fs->readdirplus)(opendir, request, size, offset);
 }
 
 /* FSYNCDIR */
 
 void service_fs_fsyncdir(struct fuse_opendir_s *opendir, struct fuse_request_s *request, unsigned char datasync)
 {
+    struct service_fs_s *fs=opendir->context->service.filesystem.fs;
     logoutput("FSYNCDIR %s (thread %i)", opendir->context->name, (int) gettid());
-    (* opendir->context->fs->fsyncdir)(opendir, request, datasync);
+    (* fs->fsyncdir)(opendir, request, datasync);
 }
 
 /* RELEASEDIR */
@@ -191,10 +205,11 @@ void service_fs_fsyncdir(struct fuse_opendir_s *opendir, struct fuse_request_s *
 void service_fs_releasedir(struct fuse_opendir_s *opendir, struct fuse_request_s *request)
 {
     struct directory_s *directory=get_directory(opendir->inode);
+    struct service_fs_s *fs=opendir->context->service.filesystem.fs;
 
     logoutput("RELEASEDIR %s (thread %i)", opendir->context->name, (int) gettid());
 
-    (* opendir->context->fs->releasedir)(opendir, request);
+    (* fs->releasedir)(opendir, request);
 
     if (directory) {
 	struct pathcalls_s *pathcalls=&directory->pathcalls;

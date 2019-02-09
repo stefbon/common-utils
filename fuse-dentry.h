@@ -32,10 +32,8 @@
 #define _INODE_DIRECTORY_SIZE					4096
 #define _DEFAULT_BLOCKSIZE					4096
 
-#define FORGET_INODE_FLAG_QUEUE					1
-#define FORGET_INODE_FLAG_REMOVE_ENTRY				2
-#define FORGET_INODE_FLAG_DELETED				4
-#define FORGET_INODE_FLAG_NOTIFY_VFS				8
+#define FORGET_INODE_FLAG_FORGET				1
+#define FORGET_INODE_FLAG_DELETED				2
 
 #define INODE_LINK_TYPE_CONTEXT					1
 #define INODE_LINK_TYPE_ID					2
@@ -44,7 +42,10 @@
 #define INODE_LINK_TYPE_DIRECTORY				5
 #define INODE_LINK_TYPE_CACHE					6
 
-#define INODE_FLAG_CACHED					1
+#define INODE_FLAG_HASHED					1
+#define INODE_FLAG_CACHED					2
+#define INODE_FLAG_DELETED					4
+#define INODE_FLAG_REMOVED					8
 
 #include "skiplist.h"
 
@@ -117,8 +118,7 @@ void get_inode_stat(struct inode_s *inode, struct stat *st);
 struct inode_s *realloc_inode(struct inode_s *inode, unsigned int new);
 
 struct inode_s *find_inode(uint64_t ino);
-struct inode_s *forget_inode(struct context_interface_s *i, uint64_t ino, uint64_t lookup, void (*cb) (void *data), void *data, unsigned int flags);
-void remove_inode(struct context_interface_s *i, struct inode_s *inode);
+void queue_inode_2forget(ino_t ino, dev_t dev, unsigned int flags, uint64_t forget);
 
 #define INODE_INFORMATION_OWNER						(1 << 0)
 #define INODE_INFORMATION_GROUP						(1 << 1)

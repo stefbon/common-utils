@@ -73,21 +73,26 @@ static void service_fs_forget(struct inode_s *inode)
 {
 
     if (fs_lock_datalink(inode)==0) {
-	struct inode_link_s link;
+	struct inode_link_s *link=NULL;
 
-	memcpy(&link, &inode->link, sizeof(struct inode_link_s));
+	fs_get_inode_link(inode, &link);
 
-	if (link.type==INODE_LINK_TYPE_CONTEXT) {
-	    struct service_context_s *context=(struct service_context_s *) link.link.ptr;
+	if (link->type==INODE_LINK_TYPE_CONTEXT) { /* must be true */
+	    struct service_context_s *context=(struct service_context_s *) link->link.ptr;
 	    struct workspace_mount_s *workspace=context->workspace;
 	    struct fuse_user_s *user=workspace->user;
 
-	    logoutput("FORGET root %s", context->name);
+	    logoutput("FORGET context %s", context->name);
 
-	    (* context->interface.free)(&context->interface);
+	    (* context->interface.signal_interface)(&context->interface, "disconnect");
+	    (* context->interface.signal_interface)(&context->interface, "close");
+	    (* context->interface.signal_interface)(&context->interface, "free");
 	    remove_list_element(&context->list);
 	    if (context->parent) context->parent->refcount--;
 	    free_service_context(context);
+
+	    link->type=0;
+	    link->link.ptr=NULL;
 
 	}
 
@@ -140,16 +145,18 @@ static void service_fs_lookup(struct service_context_s *context, struct fuse_req
 	    _fs_common_cached_lookup(context, request, entry->inode);
 
 	} else {
+	    struct service_fs_s *fs=context->service.filesystem.fs;
 
-	    (* context->fs->lookup_existing)(context, request, entry, &pathinfo);
+	    (* fs->lookup_existing)(context, request, entry, &pathinfo);
 
 	}
 
     } else {
+	struct service_fs_s *fs=context->service.filesystem.fs;
 
 	logoutput("service_fs_lookup: root context %s (thread %i) %s (entry not found)", context->name, (int) gettid(), pathinfo.path);
 
-	(* context->fs->lookup_new)(context, request, pinode, &xname, &pathinfo);
+	(* fs->lookup_new)(context, request, pinode, &xname, &pathinfo);
 
     }
 
@@ -180,9 +187,10 @@ static void service_fs_getattr(struct service_context_s *context, struct fuse_re
     pathinfo.path=pathstart;
 
     if (context) {
+	struct service_fs_s *fs=context->service.filesystem.fs;
 
 	logoutput("service_fs_getattr: context root %s (thread %i): %s", context->name, (int) gettid(), pathinfo.path);
-	(* context->fs->getattr)(context, request, inode, &pathinfo);
+	(* fs->getattr)(context, request, inode, &pathinfo);
 	return;
 
     }
@@ -225,9 +233,10 @@ static void service_fs_setattr(struct service_context_s *context, struct fuse_re
     pathinfo.path=pathstart;
 
     if (context) {
+	struct service_fs_s *fs=context->service.filesystem.fs;
 
 	logoutput("service_fs_setattr: context root %s (thread %i): %s", context->name, (int) gettid(), pathinfo.path);
-	(* context->fs->setattr)(context, request, inode, &pathinfo, st, set);
+	(* fs->setattr)(context, request, inode, &pathinfo, st, set);
 	return;
 
     }
@@ -297,9 +306,10 @@ static void service_fs_mkdir(struct service_context_s *context, struct fuse_requ
 	pathinfo.path=pathstart;
 
 	if (context) {
+	    struct service_fs_s *fs=context->service.filesystem.fs;
 
 	    logoutput("service_fs_mkdir: context root %s (thread %i): %s", context->name, (int) gettid(), pathinfo.path);
-	    (* context->fs->mkdir)(context, request, entry, &pathinfo, &st);
+	    (* fs->mkdir)(context, request, entry, &pathinfo, &st);
 	    return;
 
 	}
@@ -391,9 +401,10 @@ static void service_fs_mknod(struct service_context_s *context, struct fuse_requ
 	pathinfo.path=pathstart;
 
 	if (context) {
+	    struct service_fs_s *fs=context->service.filesystem.fs;
 
 	    logoutput("service_fs_mknod: context root %s (thread %i): %s", context->name, (int) gettid(), pathinfo.path);
-	    (* context->fs->mknod)(context, request, entry, &pathinfo, &st);
+	    (* fs->mknod)(context, request, entry, &pathinfo, &st);
 	    return;
 
 	}
@@ -463,19 +474,25 @@ static void service_fs_symlink(struct service_context_s *context, struct fuse_re
 	pathinfo.path=pathstart;
 
 	if (context) {
+	    struct service_fs_s *fs=context->service.filesystem.fs;
 
 	    logoutput("service_fs_symlink: context root %s (thread %i) %s to %s", context->name, (int) gettid(), pathstart, target);
 
-	    if ((* context->fs->symlink_validate)(context, &pathinfo, (char *)target, &remote_target)==0) {
+	    if ((* fs->symlink_validate)(context, &pathinfo, (char *)target, &remote_target)==0) {
 
-		(* context->fs->symlink)(context, request, entry, &pathinfo, remote_target);
+		(* fs->symlink)(context, request, entry, &pathinfo, remote_target);
 		free(remote_target);
 		return;
 
 	    } else {
 
 		reply_VFS_error(request, EPERM);
-		if (entry) remove_inode(&context->interface, entry->inode);
+		if (entry) {
+		    struct inode_s *inode=entry->inode;
+
+		    queue_inode_2forget(context->unique, inode->st.st_ino, 0, 0);
+
+		}
 
 	    }
 
@@ -499,7 +516,7 @@ static void service_fs_symlink(struct service_context_s *context, struct fuse_re
 static void service_fs_unlink(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *pinode, const char *name, unsigned int len)
 {
     unsigned int error=ENOENT;
-    struct name_s xname={(char *)name, len-1, 0};
+    struct name_s xname={(char *)name, len, 0};
     struct entry_s *entry=NULL;
 
     calculate_nameindex(&xname);
@@ -526,9 +543,10 @@ static void service_fs_unlink(struct service_context_s *context, struct fuse_req
 	pathinfo.path=pathstart;
 
 	if (context) {
+	    struct service_fs_s *fs=context->service.filesystem.fs;
 
 	    logoutput("service_fs_unlink: context root %s (thread %i) %s", context->name, (int) gettid(), pathstart);
-	    (* context->fs->unlink)(context, request, &entry, &pathinfo);
+	    (* fs->unlink)(context, request, &entry, &pathinfo);
 	    return;
 
 	}
@@ -546,7 +564,7 @@ static void service_fs_unlink(struct service_context_s *context, struct fuse_req
 static void service_fs_rmdir(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *pinode, const char *name, unsigned int len)
 {
     unsigned int error=ENOENT;
-    struct name_s xname={(char *)name, strlen(name), 0};
+    struct name_s xname={(char *)name, len, 0};
     struct entry_s *entry=NULL;
 
     calculate_nameindex(&xname);
@@ -585,10 +603,11 @@ static void service_fs_rmdir(struct service_context_s *context, struct fuse_requ
 	pathinfo.path=pathstart;
 
 	if (context) {
+	    struct service_fs_s *fs=context->service.filesystem.fs;
 
 	    logoutput("service_fs_rmdir: context root %s (thread %i) %s", context->name, (int) gettid(), pathinfo.path);
 
-	    (* context->fs->rmdir)(context, request, &entry, &pathinfo);
+	    (* fs->rmdir)(context, request, &entry, &pathinfo);
 	    if (entry==NULL && sub_directory) destroy_directory(sub_directory);
 	    return;
 
@@ -668,19 +687,17 @@ static void service_fs_rename_keep(struct service_context_s *context, struct fus
 	    char n_path[n_pathlen + 1];
 	    struct pathinfo_s n_pathinfo=PATHINFO_INIT;
 	    struct fuse_path_s fpath;
+	    struct service_fs_s *fs=NULL;
 
 	    init_fuse_path(&fpath, n_path, n_pathlen);
 
 	    if (S_ISDIR(n_entry->inode->st.st_mode)) {
 
-		pathcalls=get_pathcalls(n_entry->inode);
 		directory=get_directory(n_entry->inode);
 
 	    } else {
 
 		pathinfo.len=add_name_path(&fpath, &n_entry->name);
-
-		pathcalls=get_pathcalls(n_entry->parent->inode);
 		directory=get_directory(n_entry->parent->inode);
 
 	    }
@@ -692,6 +709,7 @@ static void service_fs_rename_keep(struct service_context_s *context, struct fus
 
 	    }
 
+	    pathcalls=get_pathcalls(directory);
 	    lock_pathcalls(pathcalls);
 	    n_pathinfo.len+=(* pathcalls->get_path)(directory, &fpath);
 	    unlock_pathcalls(pathcalls);
@@ -703,10 +721,12 @@ static void service_fs_rename_keep(struct service_context_s *context, struct fus
 
 	    }
 
+	    context=fpath.context;
+	    fs=context->service.filesystem.fs;
 	    n_pathinfo.path=fpath.pathstart;
 	    logoutput("service_fs_rename_keep: context root %s (thread %i): %s to %s", context->name, (int) gettid(), pathinfo.path, n_pathinfo.path);
 
-	    (* context->fs->rename)(context, request, &entry, &pathinfo, &n_entry, &n_pathinfo, flags);
+	    (* context->service.filesystem.fs->rename)(context, request, &entry, &pathinfo, &n_entry, &n_pathinfo, flags);
 
 	}
 
@@ -799,17 +819,18 @@ static void service_fs_create(struct fuse_openfile_s *openfile, struct fuse_requ
 	pathinfo.path=pathstart;
 
 	if (context) {
+	    struct service_fs_s *fs=context->service.filesystem.fs;
 
 	    logoutput("service_fs_create: context root %s (thread %i): %s", context->name, (int) gettid(), pathinfo.path);
 	    openfile->context=context;
 	    openfile->inode=entry->inode; /* now it's pointing to the right inode */
 
-	    (* context->fs->create)(openfile, request, &pathinfo, &st, flags);
+	    (* fs->create)(openfile, request, &pathinfo, &st, flags);
 
 	    if (openfile->error>0) {
-		struct service_context_s *rootcontext=get_root_context(context);
+		struct inode_s *inode=openfile->inode;
 
-		remove_inode(&rootcontext->interface, openfile->inode);
+		queue_inode_2forget(context->unique, inode->st.st_ino, 0, 0);
 		openfile->inode=NULL;
 
 	    }
@@ -852,10 +873,11 @@ static void service_fs_opendir(struct fuse_opendir_s *opendir, struct fuse_reque
     context=get_context_root_inode(opendir->inode);
 
     if (context) {
+	struct service_fs_s *fs=context->service.filesystem.fs;
 
 	opendir->context=context;
 	logoutput("OPENDIR root %s (thread %i) %s", context->name, (int) gettid(), pathinfo.path);
-	(* opendir->context->fs->opendir)(opendir, request, &pathinfo, flags);
+	(* fs->opendir)(opendir, request, &pathinfo, flags);
 	return;
 
     }
@@ -887,9 +909,10 @@ void service_fs_fsnotify(struct service_context_s *context, struct fuse_request_
     pathinfo.path=pathstart;
 
     if (context) {
+	struct service_fs_s *fs=context->service.filesystem.fs;
 
 	logoutput("service_fs_fsnotify: context root %s (thread %i) %s mask %i", context->name, (int) gettid(), pathinfo.path, mask);
-	(* context->fs->fsnotify)(context, request, &pathinfo, inode->st.st_ino, mask);
+	(* fs->fsnotify)(context, request, &pathinfo, inode->st.st_ino, mask);
 
     }
 
@@ -918,9 +941,10 @@ static void service_fs_statfs(struct service_context_s *context, struct fuse_req
     pathinfo.path=pathstart;
 
     if (context) {
+	struct service_fs_s *fs=context->service.filesystem.fs;
 
 	logoutput("service_fs_statfs: context root %s (thread %i) %s", context->name, (int) gettid(), pathinfo.path);
-	(* context->fs->statfs)(context, request, &pathinfo);
+	(* fs->statfs)(context, request, &pathinfo);
 	return;
 
     }

@@ -673,25 +673,22 @@ struct entry_s *create_entry_extended_batch(struct create_entry_s *ce)
 
 */
 
-static void _default_entry_cb(struct entry_s *entry, void *ptr)
-{
-}
-
-static void _clear_directory(struct context_interface_s *i, struct directory_s *directory, void (*cb_entry)(struct entry_s *entry, void *ptr), void *ptr)
+static void _clear_directory(struct context_interface_s *i, struct directory_s *directory, char *path, unsigned int len, unsigned int level)
 {
     struct entry_s *entry=NULL, *next=NULL;
     struct inode_s *inode=NULL;
 
     entry=(struct entry_s *) directory->first;
 
-    while(entry) {
+    while (entry) {
 
 	inode=entry->inode;
 	next=entry->name_next;
 
-	(* cb_entry)(entry, ptr);
-
 	if (inode) {
+	    struct service_context_s *context=get_service_context(i);
+
+	    (* inode->fs->forget)(inode);
 
 	    if (S_ISDIR(inode->st.st_mode)) {
 		unsigned int error=0;
@@ -701,12 +698,23 @@ static void _clear_directory(struct context_interface_s *i, struct directory_s *
 		subdir2=(subdir1) ? (* subdir1->dops->remove_directory)(inode, &error) : NULL;
 
 		if (subdir2) {
+		    struct name_s *xname=&entry->name;
+		    unsigned int keep=len;
+
+		    path[len]='/';
+		    len++;
+		    memcpy(&path[len], xname->name, xname->len);
+		    len+=xname->len;
+		    path[len]='\0';
+		    len++;
 
 		    /* do directory recursive */
 
 		    free_pathcache(&subdir2->pathcalls);
-		    _clear_directory(i, subdir2, cb_entry, ptr);
+		    _clear_directory(i, subdir2, path, len, level+1);
 		    destroy_directory(subdir2);
+		    len=keep;
+		    memset(&path[len], 0, sizeof(path) - len);
 
 		}
 
@@ -714,26 +722,27 @@ static void _clear_directory(struct context_interface_s *i, struct directory_s *
 
 	    /* remove and free inode */
 
-	    remove_inode(i, inode);
-
-	} else {
-
-	    destroy_entry(entry);
+	    inode->alias=NULL;
+	    free(inode);
+	    entry->inode=NULL;
 
 	}
 
+	destroy_entry(entry);
 	entry=next;
 
     }
 
 }
 
-void clear_directory(struct context_interface_s *i, struct directory_s *directory, void (*cb_entry)(struct entry_s *entry, void *ptr), void *ptr)
+void clear_directory(struct context_interface_s *i, struct directory_s *directory)
 {
+    struct service_context_s *context=get_service_context(i);
+    struct workspace_mount_s *workspace=context->workspace;
+    char path[workspace->pathmax];
 
-    if (! cb_entry) cb_entry=_default_entry_cb;
-    _clear_directory(i, directory, cb_entry, ptr);
-
+    memset(path, 0, workspace->pathmax);
+    _clear_directory(i, directory, path, 0, 0);
 }
 
 /*

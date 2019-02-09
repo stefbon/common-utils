@@ -63,137 +63,6 @@ unsigned char check_family_ip_address(char *address, const char *what)
 
 }
 
-/* get ipv4 as char * of connection
-    - what = 0 -> local
-    - what = 1 -> remote */
-
-char *get_connection_ipv4(unsigned int fd, unsigned char what, unsigned int *error)
-{
-    struct sockaddr_in addr;
-    socklen_t len=sizeof(struct sockaddr_in);
-    char *result=NULL;
-    char *tmp=NULL;
-
-    if (what==0) {
-
-	if (getsockname(fd, &addr, &len)==-1) {
-
-	    *error=errno;
-	    return NULL;
-
-	}
-
-    } else {
-
-	if (getpeername(fd, &addr, &len)==-1) {
-
-	    *error=errno;
-	    return NULL;
-
-	}
-
-    }
-
-    tmp=inet_ntoa(addr.sin_addr);
-
-    if (tmp) {
-
-	result=strdup(tmp);
-	if (result==NULL) *error=ENOMEM;
-
-    }
-
-    return result;
-
-}
-
-/* get hostname of connection
-    - what = 0 -> local
-    - what = 1 -> remote
-*/
-
-char *get_connection_hostname(unsigned int fd, unsigned char what, unsigned int *error)
-{
-    struct sockaddr addr;
-    socklen_t len = sizeof(struct sockaddr);
-    int result = 0;
-    char tmp[NI_MAXHOST];
-    unsigned int count = 0;
-
-    if (what==0) {
-
-	logoutput("get_connection_hostname: fd=%i local name", fd);
-
-	if (getsockname(fd, &addr, &len)==-1) {
-
-	    *error=errno;
-	    return NULL;
-
-	}
-
-    } else {
-
-	logoutput("get_connection_hostname: fd=%i remote name", fd);
-
-	if (getpeername(fd, &addr, &len)==-1) {
-
-	    *error=errno;
-	    return NULL;
-
-	}
-
-    }
-
-    gethostname:
-
-    memset(tmp, '\0', NI_MAXHOST);
-    result=getnameinfo(&addr, len, tmp, NI_MAXHOST, NULL, 0, NI_NAMEREQD);
-    count++;
-
-    if (result==0) {
-	char *hostname=NULL;
-
-	hostname=strdup(tmp);
-	if (hostname==NULL) *error=ENOMEM;
-	return hostname;
-
-    } else {
-
-	logoutput("get_connection_hostname: error %i:%s", result, gai_strerror(result));
-
-	if (result==EAI_MEMORY) {
-
-	    *error=ENOMEM;
-
-	} else if (result==EAI_NONAME) {
-
-	    *error=ENOENT;
-
-	} else if (result==EAI_SYSTEM) {
-
-	    *error=errno;
-
-	} else if (result==EAI_OVERFLOW) {
-
-	    *error=ENAMETOOLONG;
-
-	} else if (result==EAI_AGAIN) {
-
-	    if (count<10) goto gethostname;
-	    *error=EIO;
-
-	} else {
-
-	    *error=EIO;
-
-	}
-
-    }
-
-    return NULL;
-
-}
-
 /* initialize a message to send an fd over a unix socket 
     copied from question on stackoverflow:
     https://stackoverflow.com/questions/37885831/ubuntu-linux-send-file-descriptor-with-unix-domain-socket#37885976
@@ -264,6 +133,7 @@ int read_fd_msg(struct msghdr *message)
 
 int set_host_address(struct host_address_s *a, char *hostname, char *ipv4, char *ipv6)
 {
+    int result=-1;
 
     if (hostname && strlen(hostname)>0) {
 	unsigned int len=strlen(hostname);
@@ -272,7 +142,8 @@ int set_host_address(struct host_address_s *a, char *hostname, char *ipv4, char 
 
 	if (len>NI_MAXHOST) len=NI_MAXHOST;
 	memcpy(a->hostname, hostname, len);
-	return 0;
+	a->flags|=HOST_ADDRESS_FLAG_HOSTNAME;
+	result=0;
 
     }
 
@@ -283,31 +154,72 @@ int set_host_address(struct host_address_s *a, char *hostname, char *ipv4, char 
 	if (strlen(ipv4) <=INET_ADDRSTRLEN) {
 
 	    strcpy(a->ip.ip.v4, ipv4);
-	    a->ip.type=IP_ADDRESS_TYPE_IPv4;
-	    return 0;
+	    a->ip.family=IP_ADDRESS_FAMILY_IPv4;
+	    a->flags|=HOST_ADDRESS_FLAG_IP;
+	    result=0;
 
 	}
 
     }
 
-    if (ipv6) {
+    if (ipv6 && (a->flags & HOST_ADDRESS_FLAG_IP)==0) {
 
 	memset(a->ip.ip.v6, '\0', INET6_ADDRSTRLEN + 1);
 
 	if (strlen(ipv6)<=INET6_ADDRSTRLEN) {
 
 	    strcpy(a->ip.ip.v6, ipv6);
-	    a->ip.type=IP_ADDRESS_TYPE_IPv6;
-	    return 0;
+	    a->ip.family=IP_ADDRESS_FAMILY_IPv6;
+	    a->flags|=HOST_ADDRESS_FLAG_IP;
+	    result=0;
 
 	}
 
     }
 
-    return -1;
+    return result;
 }
 
-int compare_network_address(struct host_address_s *a, struct host_address_s *b)
+void get_host_address(struct host_address_s *a, char **hostname, char **ipv4, char **ipv6)
+{
+    if ((a->flags & HOST_ADDRESS_FLAG_HOSTNAME) && hostname) *hostname=a->hostname;
+    if ((a->flags & HOST_ADDRESS_FLAG_IP) && (a->ip.family==IP_ADDRESS_FAMILY_IPv4) && ipv4) *ipv4=a->ip.ip.v4;
+    if ((a->flags & HOST_ADDRESS_FLAG_IP) && (a->ip.family==IP_ADDRESS_FAMILY_IPv6) && ipv6) *ipv6=a->ip.ip.v6;
+}
+
+void translate_context_host_address(struct host_address_s *host, char **target, unsigned int *family)
+{
+
+    logoutput("translate_context_host_address");
+
+    if (target) {
+
+	if (strlen(host->hostname)>0) {
+
+	    *target=host->hostname;
+	    if (family) *family=0;
+
+	} else {
+
+	    if (host->ip.family==IP_ADDRESS_FAMILY_IPv4) {
+
+		*target=host->ip.ip.v4;
+		if (family) *family=IP_ADDRESS_FAMILY_IPv4;
+
+	    } else if (host->ip.family==IP_ADDRESS_FAMILY_IPv6) {
+
+		*target=host->ip.ip.v6;
+		if (family) *family=IP_ADDRESS_FAMILY_IPv6;
+
+	    }
+
+	}
+
+    }
+
+}
+
+int compare_host_address(struct host_address_s *a, struct host_address_s *b)
 {
 
     if (strlen(a->hostname)>0 && strlen(b->hostname)>0) {
@@ -316,13 +228,13 @@ int compare_network_address(struct host_address_s *a, struct host_address_s *b)
 
     }
 
-    if (a->ip.type==IP_ADDRESS_TYPE_IPv4 && b->ip.type==IP_ADDRESS_TYPE_IPv4) {
+    if (a->ip.family==IP_ADDRESS_FAMILY_IPv4 && b->ip.family==IP_ADDRESS_FAMILY_IPv4) {
 
 	if (strcmp(a->ip.ip.v4, b->ip.ip.v4)==0) return 0;
 
     }
 
-    if (a->ip.type==IP_ADDRESS_TYPE_IPv6 && b->ip.type==IP_ADDRESS_TYPE_IPv6) {
+    if (a->ip.family==IP_ADDRESS_FAMILY_IPv6 && b->ip.family==IP_ADDRESS_FAMILY_IPv6) {
 
 	if (strcmp(a->ip.ip.v6, b->ip.ip.v6)==0) return 0;
 
@@ -330,4 +242,11 @@ int compare_network_address(struct host_address_s *a, struct host_address_s *b)
 
     return -1;
 
+}
+
+void init_host_address(struct host_address_s *a)
+{
+    memset(a, 0, sizeof(struct host_address_s));
+    a->flags=0;
+    a->ip.family=0;
 }

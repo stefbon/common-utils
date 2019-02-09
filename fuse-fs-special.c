@@ -68,7 +68,6 @@ static struct fuse_fs_s fs;
 static char *desktopentryname=".directory";
 static pthread_mutex_t desktopmutex=PTHREAD_MUTEX_INITIALIZER;
 static struct statfs statfs_keep;
-static struct simple_hash_s special_entries;
 
 struct special_path_s {
     uint64_t					ino;
@@ -76,41 +75,26 @@ struct special_path_s {
     char					path[];
 };
 
-static unsigned int calculate_special_entry_hash(uint64_t ino)
-{
-    return (ino % special_entries.len);
-}
-
-static unsigned int get_special_entry_hash(void *ptr)
-{
-    struct special_path_s *s=(struct special_path_s *) ptr;
-    return calculate_special_entry_hash(s->ino);
-}
-
 static void _fs_special_forget(struct inode_s *inode)
 {
-    if (inode->st.st_ino>0) {
-	unsigned int hashvalue=calculate_special_entry_hash(inode->st.st_ino);
-	void *index=NULL;
-	void *ptr=NULL;
-	struct simple_lock_s lock;
-	struct special_path_s *s=NULL;
 
-	init_wlock_hashtable(&special_entries, &lock);
-	lock_hashtable(&lock);
-	ptr=get_next_hashed_value(&special_entries, &index, hashvalue);
+    if (fs_lock_datalink(inode)==0) {
+	struct inode_link_s *link=NULL;
 
-	while (ptr) {
+	fs_get_inode_link(inode, &link);
 
-	    s=(struct special_path_s *) ptr;
-	    if (s->ino==inode->st.st_ino) break;
-	    ptr=get_next_hashed_value(&special_entries, &index, hashvalue);
-	    s=NULL;
+	if (link->type==INODE_LINK_TYPE_SPECIAL_ENTRY) {
+	    struct special_path_s *s=(struct special_path_s *) link->link.ptr;
+
+	    if (s) free(s);
 
 	}
 
-	if (s) remove_data_from_hash(&special_entries, (void *) s);
-	unlock_hashtable(&lock);
+	link->type=0;
+	link->link.ptr=NULL;
+
+	fs_unlock_datalink(inode);
+
 
     }
 
@@ -275,13 +259,10 @@ void init_special_fs()
     fs.type.nondir.fgetattr=_fs_special_fgetattr;
     fs.statfs=_fs_special_statfs;
 
-    initialize_group(&special_entries, get_special_entry_hash, 256, &error);
-
 }
 
 void free_special_fs()
 {
-    free_group(&special_entries, NULL);
 }
 
 void set_fs_special(struct inode_s *inode)
@@ -308,7 +289,6 @@ void create_desktopentry_file(char *path, struct entry_s *parent, struct workspa
 	    struct special_path_s *s=malloc(sizeof(struct special_path_s) + strlen(path) + 1); /* inlcuding terminating zero */
 
 	    if (s) {
-		struct simple_lock_s lock;
 		struct inode_s *inode=entry->inode;
 
 		inode->fs=&fs;
@@ -317,11 +297,6 @@ void create_desktopentry_file(char *path, struct entry_s *parent, struct workspa
 		s->size=strlen(path);
 		inode->link.link.ptr=(void *)s;
 		inode->link.type=INODE_LINK_TYPE_SPECIAL_ENTRY;
-
-		init_wlock_hashtable(&special_entries, &lock);
-		lock_hashtable(&lock);
-		add_data_to_hash(&special_entries, (void *) s);
-		unlock_hashtable(&lock);
 
 	    }
 

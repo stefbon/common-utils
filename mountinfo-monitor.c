@@ -357,7 +357,7 @@ static void read_mountinfo_values(char *buffer, unsigned int size, struct mounti
     int left=size;
     int error=0;
 
-    logoutput("read_mountinfo_values");
+    // logoutput("read_mountinfo_values");
 
     pos=buffer;
 

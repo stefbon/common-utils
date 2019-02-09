@@ -28,7 +28,7 @@ void init_xdata(struct bevent_xdata_s *xdata);
 struct bevent_xdata_s *get_next_xdata(struct beventloop_s *loop, struct bevent_xdata_s *xdata);
 
 struct bevent_xdata_s *add_to_beventloop(int fd, uint32_t events, bevent_cb callback, void *data, struct bevent_xdata_s *xdata, struct beventloop_s *loop);
-int remove_xdata_from_beventloop(struct bevent_xdata_s *bevent_xdata);
+void remove_xdata_from_beventloop(struct bevent_xdata_s *bevent_xdata);
 
 unsigned int set_bevent_name(struct bevent_xdata_s *xdata, char *name, unsigned int *error);
 char *get_bevent_name(struct bevent_xdata_s *xdata);

@@ -248,6 +248,6 @@ void remove_data_from_hash_index(struct simple_hash_s *group, void **index)
 unsigned int get_hashvalue_index(void *index, struct simple_hash_s *group)
 {
     struct hash_element_s *element=(struct hash_element_s *) index;
-    return ((*group->hashfunction) (element->data)) % group->len;
+    return (element) ? (((*group->hashfunction) (element->data)) % group->len) : 0;
 }
 

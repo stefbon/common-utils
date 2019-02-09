@@ -47,6 +47,9 @@
 #include "fuse-directory.h"
 #include "fuse-utils.h"
 
+#include "workspaces.h"
+#include "workspace-context.h"
+
 #ifndef SIZE_INODE_HASHTABLE
 #define SIZE_INODE_HASHTABLE				10240
 #endif
@@ -60,10 +63,17 @@ static uint64_t inoctr=FUSE_ROOT_ID;
 static pthread_mutex_t inodectrmutex=PTHREAD_MUTEX_INITIALIZER;
 static unsigned long long nrinodes=0;
 
-static struct inode_s *inode_tobedeleted=NULL;
-static pthread_mutex_t inode_tobedeleted_mutex=PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t inode_tobedeleted_cond=PTHREAD_COND_INITIALIZER;
-static pthread_t inode_remove_thread=0;
+struct inode_2delete_s {
+    ino_t				ino;
+    dev_t 				unique;
+    unsigned int			flags;
+    uint64_t				forget;
+    struct inode_2delete_s		*next;
+};
+
+static pthread_t inode_2delete_threadid=0;
+static struct inode_2delete_s *inode_2delete_list=NULL;
+static pthread_mutex_t inode_2delete_mutex=PTHREAD_MUTEX_INITIALIZER;
 
 #define NAMEINDEX_ROOT1						92			/* number of valid chars*/
 #define NAMEINDEX_ROOT2						8464			/* 92 ^ 2 */
@@ -355,23 +365,23 @@ void free_inode(struct inode_s *inode)
 
 struct inode_s *realloc_inode(struct inode_s *inode, unsigned int new)
 {
-    size_t hash=inode->st.st_ino % SIZE_INODE_HASHTABLE;
     struct inode_s *keep=inode;
-    struct inode_s *next=inode->id_next;
-    struct inode_s *prev=inode->id_prev;
 
     inode=realloc(inode, sizeof(struct inode_s) + new); /* assume always good */
 
     if (inode != keep) {
+	size_t hash=0;
+	struct inode_s *next=NULL;
+	struct inode_s *prev=NULL;
 
 	if (inode==NULL) return NULL;
-	inode->cache_size=new;
+	hash=inode->st.st_ino % SIZE_INODE_HASHTABLE;
+	next=inode->id_next;
+	prev=inode->id_prev;
 
 	/* repair */
 
-	inode->id_next=next;
 	if (next) next->id_prev=inode;
-	inode->id_prev=prev;
 	if (prev) {
 
 	    prev->id_next=inode;
@@ -379,26 +389,22 @@ struct inode_s *realloc_inode(struct inode_s *inode, unsigned int new)
 	} else {
 
 	    /* no prev means it's the first */
-
 	    inode_hash_table[hash]=inode;
 
 	}
 
     }
 
+    inode->cache_size=new;
     return inode;
-
 }
 
-struct inode_s *find_inode(uint64_t ino)
+struct inode_s *find_inode(ino_t ino)
 {
     size_t hash=ino % SIZE_INODE_HASHTABLE;
     struct inode_s *inode=NULL;
 
-    // logoutput("find_inode: ino %li", (long) ino);
-
     pthread_mutex_lock(&inode_table_mutex);
-
     inode=inode_hash_table[hash];
 
     while(inode) {
@@ -409,155 +415,152 @@ struct inode_s *find_inode(uint64_t ino)
     }
 
     pthread_mutex_unlock(&inode_table_mutex);
-
-    // logoutput("find_inode: ino %li %s", (long) ino, (inode) ? "found" : "notfound");
-
     return inode;
 
 }
 
-static void remove_inodes_thread(void *ptr)
+static void inode_2delete_thread(void *ptr)
 {
-    struct context_interface_s *interface=(struct context_interface_s *) ptr;
+    struct inode_2delete_s *i2d=NULL;
+    size_t hash=0;
     struct inode_s *inode=NULL;
 
-    logoutput_info("remove_inodes_thread");
+    geti2d:
 
-    inode=inode_tobedeleted;
+    pthread_mutex_lock(&inode_2delete_mutex);
 
-    while(inode) {
+    if (inode_2delete_list) {
 
-	inode_tobedeleted=inode->id_next;
+	i2d=inode_2delete_list;
+	inode_2delete_list=i2d->next;
 
-	if (inode->alias && (inode->flags & FORGET_INODE_FLAG_REMOVE_ENTRY)) {
+    } else {
+
+	inode_2delete_threadid=0;
+	pthread_mutex_unlock(&inode_2delete_mutex);
+	return;
+
+    }
+
+    pthread_mutex_unlock(&inode_2delete_mutex);
+
+    hash=i2d->ino % SIZE_INODE_HASHTABLE;
+
+    pthread_mutex_lock(&inode_table_mutex);
+    inode=inode_hash_table[hash];
+
+    while (inode) {
+
+	if (inode->st.st_ino==i2d->ino) {
 	    struct entry_s *entry=inode->alias;
 	    struct entry_s *parent=(entry) ? entry->parent : NULL;
 
-	    logoutput_info("remove_inodes_thread: remove %lli", inode->st.st_ino);
+	    if (i2d->flags & FORGET_INODE_FLAG_FORGET) {
 
-	    if (inode->flags & FORGET_INODE_FLAG_NOTIFY_VFS) {
+		if (inode->nlookup<=i2d->forget) {
 
-		if (entry) notify_VFS_delete(interface->ptr, parent->inode->st.st_ino, inode->st.st_ino, entry->name.name, entry->name.len);
+		    inode->nlookup=0;
 
-	    }
+		} else {
 
-	    // logoutput_info("remove_inodes_thread: A");
-
-	    if (entry)  {
-
-		if (parent) {
-		    struct simple_lock_s wlock;
-		    struct directory_s *directory=get_directory(parent->inode);
-
-		    // logoutput_info("remove_inodes_thread: B");
-
-		    if (wlock_directory(directory, &wlock)==0) {
-			//struct directory_s *directory=get_directory(parent->inode);
-			unsigned int error=0;
-
-			// logoutput_info("remove_inodes_thread: C");
-			remove_entry(entry, &error); /* remove from skiplist (=directory) */
-			// logoutput_info("remove_inodes_thread: D");
-			unlock_directory(directory, &wlock);
-
-		    }
+		    inode->nlookup-=i2d->forget;
 
 		}
 
+	    }
+
+	    if (parent) {
+		struct simple_lock_s wlock;
+		struct directory_s *directory=get_directory(parent->inode);
+
+		/* remove entry from directory */
+
+		if (wlock_directory(directory, &wlock)==0) {
+		    unsigned int error=0;
+
+		    remove_entry_batch(directory, entry, &error);
+		    unlock_directory(directory, &wlock);
+
+		}
+
+		entry->parent=NULL;
+
+	    }
+
+	    if ((i2d->flags & FORGET_INODE_FLAG_DELETED) && (inode->flags & INODE_FLAG_DELETED)==0) {
+		struct simple_lock_s rlock;
+		struct service_context_s *context=NULL;
+
+		/* inform VFS, only when the VFS is not the initiator  */
+
+		logoutput("inode_2delete_thread: remote deleted ino %lli name %s", i2d->ino, (entry) ? entry->name.name : "-UNKNOWN-");
+
+		init_rlock_service_context_hash(&rlock);
+		lock_service_context_hash(&rlock);
+		context=search_service_context(i2d->unique);
+
+		if (context) {
+		    struct service_context_s *root=get_root_context(context);
+
+		    if (parent) {
+
+			notify_VFS_delete(root->interface.ptr, parent->inode->st.st_ino, inode->st.st_ino, entry->name.name, entry->name.len);
+
+		    } else if (entry) {
+
+			notify_VFS_delete(root->interface.ptr, 0, inode->st.st_ino, entry->name.name, entry->name.len);
+
+		    } else {
+
+			notify_VFS_delete(root->interface.ptr, 0, inode->st.st_ino, NULL, 0);
+
+		    }
+
+		    unlock_service_context_hash(&rlock);
+
+		}
+
+		inode->flags|=INODE_FLAG_DELETED;
+
+	    }
+
+	    /* only when lookup count becomes zero remove it foregood */
+
+	    if (inode->nlookup==0) {
+
+		logoutput("inode_2delete_thread: forget inode ino %lli name %s", i2d->ino, (entry) ? entry->name.name : "-UNKNOWN-");
+
+		if (inode->flags & INODE_FLAG_HASHED) {
+		    struct inode_s *next=inode->id_next;
+		    struct inode_s *prev=inode->id_prev;
+
+		    if (next) next->id_prev=prev;
+		    if (prev) {
+
+			prev->id_next=next;
+
+		    } else {
+
+			inode_hash_table[hash]=next;
+
+		    }
+
+		    inode->id_next=NULL;
+		    inode->id_prev=NULL;
+		    inode->flags-=INODE_FLAG_HASHED;
+
+		}
+
+		/* call the inode specific forget which will also release the attached data */
+
+		(* inode->fs->forget)(inode);
+
 		entry->inode=NULL;
 		inode->alias=NULL;
-		destroy_entry(entry); /* free */
+		destroy_entry(entry);
+		free_inode(inode);
 
 	    }
-
-	}
-
-	free_inode(inode);
-	inode=inode_tobedeleted;
-
-    }
-
-    pthread_mutex_lock(&inode_tobedeleted_mutex);
-    inode_remove_thread=0;
-    pthread_cond_broadcast(&inode_tobedeleted_cond); /* 20181205: not used now */
-    pthread_mutex_unlock(&inode_tobedeleted_mutex);
-
-}
-
-static void start_remove_inode_thread(struct context_interface_s *interface)
-{
-    unsigned int error=0;
-
-    pthread_mutex_lock(&inode_tobedeleted_mutex);
-
-    if (inode_remove_thread==0) {
-
-	work_workerthread(NULL, 0, remove_inodes_thread, (void *)interface, &error);
-	inode_remove_thread=1;
-
-    }
-
-    pthread_mutex_unlock(&inode_tobedeleted_mutex);
-}
-
-static void cb_dummy(void *data)
-{
-}
-
-struct inode_s *forget_inode(struct context_interface_s *interface, uint64_t ino, uint64_t nlookup, void (*cb) (void *data), void *data, unsigned int flags)
-{
-    size_t hash=ino % SIZE_INODE_HASHTABLE;
-    struct inode_s *inode=NULL;
-
-    if (cb==NULL) cb=cb_dummy;
-    if (ino==0 || interface==NULL) return NULL;
-
-    pthread_mutex_lock(&inode_table_mutex);
-
-    inode=inode_hash_table[hash];
-
-    while(inode) {
-
-	if (inode->st.st_ino==ino) {
-	    struct inode_s *prev=NULL;
-	    struct inode_s *next=NULL;
-
-	    if (inode->nlookup < nlookup && nlookup>0) {
-
-		inode->nlookup -= nlookup;
-		inode=NULL;
-		break;
-
-	    }
-
-	    inode->nlookup=0;
-	    prev=inode->id_prev;
-	    next=inode->id_next;
-
-	    if (prev) {
-
-		prev->id_next=next;
-
-	    } else {
-
-		/* no prev: it must be the first */
-
-		inode_hash_table[hash]=next;
-
-	    }
-
-	    if (next) next->id_prev=prev;
-	    inode->id_next=NULL;
-	    inode->id_prev=NULL;
-	    (* cb) (data);
-
-	    /* move to to be deleted list */
-
-	    inode->id_next=inode_tobedeleted;
-	    inode->id_prev=NULL;
-	    inode_tobedeleted=inode;
-	    inode->flags |= FORGET_INODE_FLAG_DELETED;
-	    if (flags & FORGET_INODE_FLAG_REMOVE_ENTRY) inode->flags |= FORGET_INODE_FLAG_REMOVE_ENTRY;
 
 	    break;
 
@@ -568,57 +571,41 @@ struct inode_s *forget_inode(struct context_interface_s *interface, uint64_t ino
     }
 
     pthread_mutex_unlock(&inode_table_mutex);
+    free(i2d);
+    i2d=NULL;
 
-    if (inode && (flags & FORGET_INODE_FLAG_QUEUE)) {
-
-	start_remove_inode_thread(interface);
-	inode=NULL;
-
-    }
-
-    return inode;
+    goto geti2d;
 
 }
 
-void remove_inode(struct context_interface_s *interface, struct inode_s *inode)
+void queue_inode_2forget(ino_t ino, dev_t dev, unsigned int flags, uint64_t forget)
 {
-    size_t hash=inode->st.st_ino % SIZE_INODE_HASHTABLE;
-    struct inode_s *prev=NULL;
-    struct inode_s *next=NULL;
+    struct inode_2delete_s *i2d=NULL;
 
-    if (inode==NULL || interface==NULL) return;
+    i2d=malloc(sizeof(struct inode_2delete_s));
 
-    pthread_mutex_lock(&inode_table_mutex);
+    if (i2d) {
 
-    prev=inode->id_prev;
-    next=inode->id_next;
+	i2d->ino=ino;
+	i2d->unique=dev;
+	i2d->flags=flags;
+	i2d->forget=forget;
 
-    if (prev) {
+	pthread_mutex_lock(&inode_2delete_mutex);
+	i2d->next=inode_2delete_list;
+	inode_2delete_list=i2d;
 
-	prev->id_next=next;
+	if (inode_2delete_threadid==0) {
+	    unsigned int error=0;
 
-    } else {
+	    inode_2delete_threadid=1;
+	    work_workerthread(NULL, 0, inode_2delete_thread, NULL, &error);
 
-	/* no prev: it must be the first */
+	}
 
-	inode_hash_table[hash]=next;
+	pthread_mutex_unlock(&inode_2delete_mutex);
 
     }
-
-    if (next) next->id_prev=prev;
-    inode->id_next=NULL;
-    inode->id_prev=NULL;
-
-    inode->id_next=inode_tobedeleted;
-    inode->id_prev=NULL;
-    inode_tobedeleted=inode;
-    inode->flags |= FORGET_INODE_FLAG_DELETED;
-    inode->flags |= FORGET_INODE_FLAG_REMOVE_ENTRY;
-    inode->flags |= FORGET_INODE_FLAG_NOTIFY_VFS;
-
-    pthread_mutex_unlock(&inode_table_mutex);
-
-    if (inode) start_remove_inode_thread(interface);
 
 }
 

@@ -127,8 +127,6 @@ static void add_xdata_to_list(struct bevent_xdata_s *xdata)
 {
     struct beventloop_s *loop=xdata->loop;
 
-    logoutput("add_xdata_to_list");
-
     if ( ! loop) {
 
 	loop=get_mainloop();
@@ -137,22 +135,16 @@ static void add_xdata_to_list(struct bevent_xdata_s *xdata)
     }
 
     init_list_element(&xdata->list, NULL);
-    /* add at tail */
     add_list_element_last(&loop->xdata_list.header, &xdata->list);
+    xdata->status |= BEVENT_OPTION_ADDED_LIST;
 
-}
-
-static void remove_xdata_from_list(struct bevent_xdata_s *xdata)
-{
-    struct beventloop_s *loop=xdata->loop;
-    if (loop) remove_list_element(&xdata->list);
 }
 
 struct bevent_xdata_s *add_to_beventloop(int fd, uint32_t events, bevent_cb callback, void *data, struct bevent_xdata_s *xdata, struct beventloop_s *loop)
 {
     struct epoll_event e_event;
 
-    logoutput("add_to_beventloop");
+    logoutput("add_to_beventloop: fd %i", fd);
 
     if ( ! loop) loop=get_mainloop();
 
@@ -165,11 +157,12 @@ struct bevent_xdata_s *add_to_beventloop(int fd, uint32_t events, bevent_cb call
 	if (xdata) {
 
 	    memset(xdata, 0, sizeof(struct bevent_xdata_s));
-	    xdata->status|=BEVENT_OPTION_ALLOCATED;
 	    init_xdata(xdata);
+	    xdata->status|=BEVENT_OPTION_ALLOCATED;
 
 	} else {
 
+	    logoutput("add_to_beventloop: create xdata failed");
 	    goto unlock;
 
 	}
@@ -183,19 +176,22 @@ struct bevent_xdata_s *add_to_beventloop(int fd, uint32_t events, bevent_cb call
 
         if (xdata->status & BEVENT_OPTION_ALLOCATED) free(xdata);
 	xdata=NULL;
+	logoutput("add_to_beventloop: error %i adding fd %i (%s)", errno, fd, strerror(errno));
 	goto unlock;
 
     } else {
+
+	logoutput("add_to_beventloop: added fd %i", fd);
 
 	xdata->fd=fd;
 	xdata->loop=loop;
 	xdata->callback=callback;
 	xdata->data=data;
+	xdata->status|=BEVENT_OPTION_ADDED_EVENTLOOP;
 
     }
 
     add_xdata_to_list(xdata);
-    xdata->status|=BEVENT_OPTION_ADDED;
 
     unlock:
 
@@ -204,32 +200,31 @@ struct bevent_xdata_s *add_to_beventloop(int fd, uint32_t events, bevent_cb call
 
 }
 
-int remove_xdata_from_beventloop(struct bevent_xdata_s *xdata)
+void remove_xdata_from_beventloop(struct bevent_xdata_s *xdata)
 {
     struct beventloop_s *loop=NULL;
 
-    if (xdata==NULL) return -1;
+    if (xdata==NULL) return;
     loop=xdata->loop;
-    if (! loop) return -1;
+    if (! loop) return;
 
     lock_beventloop(loop);
 
-    if (xdata->fd>0) {
+    if (xdata->status & BEVENT_OPTION_ADDED_EVENTLOOP) {
 
-	if (loop->fd>0 && (xdata->status & BEVENT_OPTION_ADDED)) {
-
-	    epoll_ctl(loop->fd, EPOLL_CTL_DEL, xdata->fd, NULL);
-	    xdata->status-=BEVENT_OPTION_ADDED;
-	}
-
-	xdata->fd=0;
+	if (loop->fd>0) epoll_ctl(loop->fd, EPOLL_CTL_DEL, xdata->fd, NULL);
+	xdata->status-=BEVENT_OPTION_ADDED_EVENTLOOP;
 
     }
 
-    remove_xdata_from_list(xdata);
-    unlock_beventloop(loop);
+    if (xdata->status & BEVENT_OPTION_ADDED_LIST) {
 
-    return 0;
+	remove_list_element(&xdata->list);
+	xdata->status-=BEVENT_OPTION_ADDED_LIST;
+
+    }
+
+    unlock_beventloop(loop);
 }
 
 struct bevent_xdata_s *get_next_xdata(struct beventloop_s *loop, struct bevent_xdata_s *xdata)
@@ -250,4 +245,3 @@ struct bevent_xdata_s *get_next_xdata(struct beventloop_s *loop, struct bevent_x
     return (list) ? get_containing_xdata(list) : NULL;
 
 }
-

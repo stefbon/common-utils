@@ -21,6 +21,7 @@
 
 #include "pathinfo.h"
 #include "network-utils.h"
+#include "localsocket.h"
 
 #define _INTERFACE_ADDRESS_NONE				0
 #define _INTERFACE_ADDRESS_NETWORK			1
@@ -97,13 +98,14 @@ struct context_address_s {
 struct context_interface_s {
     void				*ptr;
     void				*data;
-    void 				*(* connect)(uid_t uid, struct context_interface_s *interface, struct context_address_s *address, unsigned int *error);
-    int					(* start)(struct context_interface_s *interface, void *data);
-    void				(* disconnect)(struct context_interface_s *interface);
-    void				(* free)(struct context_interface_s *interface);
-    struct context_interface_s		*(*get_parent)(struct context_interface_s *interface);
-    struct bevent_xdata_s 		*(*add_context_eventloop)(struct context_interface_s *interface, unsigned int fd, int (*read_incoming_data)(int fd, void *ptr, uint32_t events), void *ptr, const char *name, unsigned int *error);
-    unsigned int			(* get_interface_option)(struct context_interface_s *interface, const char *name, struct context_option_s *option);
+    int 				(* connect)(uid_t uid, struct context_interface_s *interface, struct context_address_s *address, unsigned int *error);
+    int					(* start)(struct context_interface_s *interface, int fd, void *data);
+    void				(* signal_context)(struct context_interface_s *interface, const char *what);
+    void				(* signal_interface)(struct context_interface_s *interface, const char *what);
+    struct context_interface_s		*(* get_parent)(struct context_interface_s *interface);
+    int					(* add_context_eventloop)(struct context_interface_s *interface, struct fs_connection_s *c, unsigned int fd, int (*read_incoming_data)(int fd, void *ptr, uint32_t events), void *ptr, const char *name, unsigned int *error);
+    void				(* remove_context_eventloop)(struct context_interface_s *interface);
+    unsigned int			(* get_context_option)(struct context_interface_s *interface, const char *name, struct context_option_s *option);
     unsigned int			(* get_interface_info)(struct context_interface_s *interface, const char *what, void *data, struct common_buffer_s *buffer);
     union {
 	struct sftp_ops_s {
@@ -127,7 +129,7 @@ static inline unsigned int get_interface_option_integer(struct context_interface
 
     memset(&option, 0, sizeof(struct context_option_s));
 
-    result=(* interface->get_interface_option)(interface, name, &option);
+    result=(* interface->get_context_option)(interface, name, &option);
 
     if (option.type==_INTERFACE_OPTION_INT) {
 

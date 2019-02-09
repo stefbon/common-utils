@@ -306,6 +306,7 @@ void _fs_common_virtual_lookup(struct service_context_s *context, struct fuse_re
 	    struct pathinfo_s pathinfo=PATHINFO_INIT;
 	    unsigned int pathlen=0;
 	    char path[3];
+	    struct service_fs_s *fs=NULL;
 
 	    logoutput("_fs_common_virtual_lookup: use context %s", service_context->name);
 
@@ -316,7 +317,9 @@ void _fs_common_virtual_lookup(struct service_context_s *context, struct fuse_re
 	    pathinfo.len=2;
 	    pathinfo.path=path;
 
-	    (* service_context->fs->lookup_existing)(service_context, request, entry, &pathinfo);
+	    fs=service_context->service.filesystem.fs;
+
+	    (* fs->lookup_existing)(service_context, request, entry, &pathinfo);
 	    return;
 
 	}
@@ -393,6 +396,7 @@ void _fs_common_virtual_opendir(struct fuse_opendir_s *opendir, struct fuse_requ
     open_out.padding=0;
     reply_VFS_data(request, (char *) &open_out, sizeof(open_out));
     opendir->handle.ptr=(void *) directory->first;
+    logoutput("_fs_common_virtual_opendir: ready");
 
 }
 
@@ -721,7 +725,7 @@ int symlink_generic_validate(struct service_context_s *context, char *target)
     if (len>mountpoint->len) {
 
 	if (strncmp(target, mountpoint->path, mountpoint->len)==0 && target[mountpoint->len]=='/') {
-	    struct directory_s *directory=get_directory(context->inode);
+	    struct directory_s *directory=get_directory(context->service.filesystem.inode);
 
 	    if (directory) {
 		char *pos=&target[mountpoint->len];

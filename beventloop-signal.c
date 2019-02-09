@@ -59,6 +59,7 @@ static void default_signal_cb(struct beventloop_s *loop, void *data, struct sign
 
     if ( signo==SIGHUP || signo==SIGINT || signo==SIGTERM ) {
 
+	logoutput("default_signal_cb: caught signal %i sender %i", signo, (unsigned int) fdsi->ssi_pid);
 	loop->status=BEVENTLOOP_STATUS_DOWN;
 
     } else {
@@ -129,7 +130,7 @@ static int add_signalhandler(struct beventloop_s *loop, void (* cb) (struct beve
 
     }
 
-    fd = signalfd(-1, &sigset, SFD_NONBLOCK);
+    fd = signalfd(-1, &sigset, 0);
 
     if (fd == -1) {
 
@@ -142,12 +143,12 @@ static int add_signalhandler(struct beventloop_s *loop, void (* cb) (struct beve
 
     if (! xdata) {
 
-	*error=-EIO;
+	*error=EIO;
 	goto error;
 
     }
 
-    xdata->data=(void *) data;
+    xdata->data=(void *) xdata;
 
     if (cb) {
 
@@ -170,6 +171,8 @@ static int add_signalhandler(struct beventloop_s *loop, void (* cb) (struct beve
     if (fd>0) close(fd);
     if (xdata) free(xdata);
 
+    logoutput("add_signalhandler: error %i (%s)", *error, strerror(*error));
+
     return -1;
 
 }
@@ -189,7 +192,7 @@ int enable_beventloop_signal(struct beventloop_s *loop, void (* cb) (struct beve
     } else {
 
 	/* signal already activated */
-
+	logoutput("enable_beventloop_signal: already activated");
 	*error=EINVAL;
 
     }

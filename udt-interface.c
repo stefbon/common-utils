@@ -39,69 +39,69 @@
 
 #include <udt/udt.h>
 
-int UDTaccept(struct fs_connection_s *conn, struct sockaddr *addr, unsigned int *len)
+int UDTaccept(unsigned int fd, struct sockaddr *addr, unsigned int *len)
 {
-    UDTSOCKET s=(UDTSOCKET) conn->fd;
+    UDTSOCKET s=(UDTSOCKET) fd;
     return (int) UDT::accept(s, addr, (int) len);
 }
 
-int UDTbind(struct fs_connection_s *conn, struct sockaddr *addr, int *len, int sock)
+int UDTbind(unsigned int fd, struct sockaddr *addr, int *len, int sock)
 {
-    UDTSOCKET s=(UDTSOCKET) conn->fd;
+    UDTSOCKET s=(UDTSOCKET) fd;
     return UDT::bind(s, addr, len, sock);
 }
 
-int UDTclose(struct fs_connection_s *conn)
+int UDTclose(unsigned int fd)
 {
-    UDTSOCKET s=(UDTSOCKET) conn->fd;
+    UDTSOCKET s=(UDTSOCKET) fd;
     return UDT::close(s);
 }
 
-int UDTconnect(struct fs_connection_s *conn, struct sockaddr *addr, int *len)
+int UDTconnect(unsigned int fd, struct sockaddr *addr, int *len)
 {
-    UDTSOCKET s=(UDTSOCKET) conn->fd;
+    UDTSOCKET s=(UDTSOCKET) fd;
     return UDT::connect(s, addr, len);
 }
 
-int UDTgetpeername(struct fs_connection_s *conn, struct sockaddr *addr, unsigned int *len)
+int UDTgetpeername(unsigned int fd, struct sockaddr *addr, unsigned int *len)
 {
-    UDTSOCKET s=(UDTSOCKET) conn->fd;
+    UDTSOCKET s=(UDTSOCKET) fd;
     return UDT::getpeername(s, addr, len);
 }
 
-int UDTgetsockname(struct fs_connection_s *conn, struct sockaddr *addr, unsigned int *len)
+int UDTgetsockname(unsigned int fd, struct sockaddr *addr, unsigned int *len)
 {
-    UDTSOCKET s=(UDTSOCKET) conn->fd;
+    UDTSOCKET s=(UDTSOCKET) fd;
     return UDT::getsockname(s, addr, len);
 }
 
-int UDTgetsockopt(struct fs_connection_s *conn, int level, int n, char *v, unsigned int *l)
+int UDTgetsockopt(unsigned int fd, int level, int n, char *v, unsigned int *l)
 {
-    UDTSOCKET s=(UDTSOCKET) conn->fd;
+    UDTSOCKET s=(UDTSOCKET) fd;
     return UDT::getsockopt(s, level, n, v, (int *)l);
 }
 
-int UDTlisten(struct fs_connection_s *conn, int blog)
+int UDTlisten(unsigned int fd, int blog)
 {
-    UDTSOCKET s=(UDTSOCKET) conn->fd;
+    UDTSOCKET s=(UDTSOCKET) fd;
     return UDT::listen(s, blog);
 }
 
-int UDTrecv(struct fs_connection_s *conn, char *buffer, unsigned int size, unsigned int flags)
+int UDTrecv(unsigned int fd, char *buffer, unsigned int size, unsigned int flags)
 {
-    UDTSOCKET s=(UDTSOCKET) conn->fd;
+    UDTSOCKET s=(UDTSOCKET) fd;
     return UDT::recv(s, buffer, size, flags);
 }
 
-int UDTsend(struct fs_connection_s *conn, char *buffer, unsigned int size, unsigned int flags)
+int UDTsend(unsigned int fd, char *buffer, unsigned int size, unsigned int flags)
 {
-    UDTSOCKET s=(UDTSOCKET) conn->fd;
+    UDTSOCKET s=(UDTSOCKET) fd;
     return UDT::send(s, buffer, size, flags);
 }
 
-int UDTsetsockopt(struct fs_connection_s *conn, int level, int n, char v, int l)
+int UDTsetsockopt(unsigned int fd, int level, int n, char *v, unsigned int l)
 {
-    UDTSOCKET s=(UDTSOCKET) conn->fd;
+    UDTSOCKET s=(UDTSOCKET) fd;
     return UDT::getsockopt(s, level, (SOCKOPT) n, v, l);
 }
 
@@ -122,57 +122,57 @@ int UDTcleanup()
 
 #else
 
-int UDTaccept(struct fs_connection_s *conn, struct sockaddr *addr, unsigned int *len)
+int UDTaccept(unsigned int fd, struct sockaddr *addr, unsigned int *len)
 {
     return -1;
 }
 
-int UDTbind(struct fs_connection_s *conn, struct sockaddr *addr, int *len, int sock)
+int UDTbind(unsigned int fd, struct sockaddr *addr, int *len, int sock)
 {
     return -1;
 }
 
-int UDTclose(struct fs_connection_s *conn)
+int UDTclose(unsigned int fd)
 {
     return -1;
 }
 
-int UDTconnect(struct fs_connection_s *conn, struct sockaddr *addr, int *len)
+int UDTconnect(unsigned int fd, struct sockaddr *addr, int *len)
 {
     return -1;
 }
 
-int UDTgetpeername(struct fs_connection_s *conn, struct sockaddr *addr, unsigned int *len)
+int UDTgetpeername(unsigned int fd, struct sockaddr *addr, unsigned int *len)
 {
     return -1;
 }
 
-int UDTgetsockname(struct fs_connection_s *conn, struct sockaddr *addr, unsigned int *len)
+int UDTgetsockname(unsigned int fd, struct sockaddr *addr, unsigned int *len)
 {
     return -1;
 }
 
-int UDTgetsockopt(struct fs_connection_s *conn, int level, int n, char *v, int *l)
+int UDTgetsockopt(unsigned int fd, int level, int n, char *v, int *l)
 {
     return -1;
 }
 
-int UDTlisten(struct fs_connection_s *conn, int blog)
+int UDTlisten(unsigned int fd, int blog)
 {
     return -1;
 }
 
-int UDTrecv(struct fs_connection_s *conn, char *buffer, unsigned int size, unsigned int flags)
+int UDTrecv(unsigned int fd, char *buffer, unsigned int size, unsigned int flags)
 {
     return -1;
 }
 
-int UDTsend(struct fs_connection_s *conn, char *buffer, unsigned int size, unsigned int flags)
+int UDTsend(unsigned int fd, char *buffer, unsigned int size, unsigned int flags)
 {
     return -1;
 }
 
-int UDTsetsockopt(struct fs_connection_s *conn, int level, int n, char *v, int l)
+int UDTsetsockopt(unsigned int fd, int level, int n, char *v, unsigned int l)
 {
     return -1;
 }
@@ -215,4 +215,3 @@ void setsocketopsudt(struct fs_connection_s *conn)
 {
     conn->sops=&udt_sops;
 }
-

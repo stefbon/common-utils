@@ -20,6 +20,7 @@
 #ifndef SB_COMMON_UTILS_FUSE_DIRECTORY_H
 #define SB_COMMON_UTILS_FUSE_DIRECTORY_H
 
+#include "fuse-dentry.h"
 #include "simple-locking.h"
 
 #define _DIRECTORY_FLAG_REMOVE					1

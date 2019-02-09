@@ -169,6 +169,8 @@ static void dummy_eventcall(struct timerid_s *id, struct timespec *t)
 static void init_timerentry(struct timerentry_s *timerentry, struct timespec *expire)
 {
 
+    memset(timerentry, 0, sizeof(struct timerentry_s));
+
     timerentry->status=TIMERENTRY_STATUS_NOTSET;
     timerentry->ctr=0;
 
@@ -185,7 +187,6 @@ static void init_timerentry(struct timerentry_s *timerentry, struct timespec *ex
     }
 
     timerentry->eventcall=dummy_eventcall;
-    memset(&timerentry->id, 0, sizeof(struct timerentry_s));
     timerentry->list.n=NULL;
     timerentry->list.p=NULL;
 
@@ -203,7 +204,15 @@ struct timerentry_s *create_timerentry(struct timespec *expire, void (*cb) (stru
 	if (loop==NULL) loop=get_mainloop();
 	entry->status=TIMERENTRY_STATUS_QUEUE;
 
-	memcpy(&entry->id, id, sizeof(struct timerid_s));
+	if (id->type==TIMERID_TYPE_PTR) {
+
+	    entry->id.id.ptr=id->id.ptr;
+
+	} else if (id->type==TIMERID_TYPE_UNIQUE) {
+
+	    entry->id.id.unique=id->id.unique;
+
+	}
 
 	pthread_mutex_lock(&loop->timer_list.mutex);
 	if (insert_timerentry(loop, entry)==1) set_timer(loop);

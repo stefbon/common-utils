@@ -72,7 +72,7 @@ void init_create_entry(struct create_entry_s *ce, struct name_s *n, struct entry
 struct entry_s *create_entry_extended(struct create_entry_s *ce);
 struct entry_s *create_entry_extended_batch(struct create_entry_s *ce);
 
-void clear_directory(struct context_interface_s *i, struct directory_s *directory, void (*cb_entry)(struct entry_s *e, void *ptr), void *ptr);
+void clear_directory(struct context_interface_s *i, struct directory_s *directory);
 
 struct entry_s *walk_fuse_fs(struct entry_s *parent, char *path);
 

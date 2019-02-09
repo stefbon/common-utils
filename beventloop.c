@@ -69,6 +69,7 @@ int unlock_beventloop(struct beventloop_s *beventloop)
 
 static void signal_cb_dummy(struct beventloop_s *b, void *data, struct signalfd_siginfo *fdsi)
 {
+    logoutput("signal_cb_dummy");
 }
 
 static void _run_expired_dummy(struct beventloop_s *loop)
@@ -80,7 +81,6 @@ static void clear_eventloop(struct beventloop_s *loop)
     struct timer_list_s *timers=&loop->timer_list;
 
     memset(loop, 0, sizeof(struct beventloop_s));
-
     loop->status=0;
     loop->options=0;
     init_list_header(&loop->xdata_list.header, SIMPLE_LIST_TYPE_EMPTY, NULL);
@@ -97,6 +97,8 @@ static void clear_eventloop(struct beventloop_s *loop)
 int init_beventloop(struct beventloop_s *loop, unsigned int *error)
 {
 
+    if (! loop) loop=&beventloop_main;
+
     pthread_mutex_lock(&global_mutex);
 
     if (init==0) {
@@ -107,8 +109,6 @@ int init_beventloop(struct beventloop_s *loop, unsigned int *error)
     }
 
     pthread_mutex_unlock(&global_mutex);
-
-    if (! loop) loop=&beventloop_main;
 
     /* create an epoll instance */
 
@@ -169,6 +169,8 @@ int start_beventloop(struct beventloop_s *loop)
 
         }
 
+	logoutput("start_beventloop: wakeup %i", count);
+
         for (unsigned int i=0; i<count; i++) {
 
             xdata=(struct bevent_xdata_s *) epoll_events[i].data.ptr;
@@ -211,15 +213,22 @@ void clear_beventloop(struct beventloop_s *loop)
 
     getxdata:
 
-    list=get_list_head(&loop->xdata_list.header, 0);
+    list=get_list_head(&loop->xdata_list.header, SIMPLE_LIST_FLAG_REMOVE);
 
     if (list) {
 	struct bevent_xdata_s *xdata=get_containing_xdata(list);
 
-	if (xdata->fd>0) {
+	if (xdata->status & BEVENT_OPTION_ADDED_EVENTLOOP) {
 
-	    if ((xdata->status & BEVENT_OPTION_ADDED) && loop->fd>0) epoll_ctl(loop->fd, EPOLL_CTL_DEL, xdata->fd, NULL);
-	    xdata->fd=0; /* not closing fd here: associated system should do this, only removing from loop here */
+	    if (loop->fd>0 && xdata->fd>0) epoll_ctl(loop->fd, EPOLL_CTL_DEL, xdata->fd, NULL);
+	    xdata->status-=BEVENT_OPTION_ADDED_EVENTLOOP;
+
+	}
+
+	if (xdata->status & BEVENT_OPTION_ADDED_LIST) {
+
+	    remove_list_element(&xdata->list);
+	    xdata->status-=BEVENT_OPTION_ADDED_LIST;
 
 	}
 
@@ -247,7 +256,7 @@ void clear_beventloop(struct beventloop_s *loop)
 
     gettimer:
 
-    list=get_list_head(&loop->timer_list.header, 0);
+    list=get_list_head(&loop->timer_list.header, SIMPLE_LIST_FLAG_REMOVE);
 
     if (list) {
 	struct timerentry_s *entry=get_containing_timerentry(list);

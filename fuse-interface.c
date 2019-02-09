@@ -54,7 +54,13 @@
 #include "workspace-interface.h"
 #include "fuse-interface.h"
 
-#define FUSEPARAM_OPTION_MOUNTED				1
+#define FUSEPARAM_STATUS_CONNECTING				1
+#define FUSEPARAM_STATUS_CONNECTED				2
+#define FUSEPARAM_STATUS_DISCONNECTING				4
+#define FUSEPARAM_STATUS_DISCONNECTED				8
+
+#define FUSEPARAM_STATUS_DISCONNECT				( FUSEPARAM_STATUS_DISCONNECTING | FUSEPARAM_STATUS_DISCONNECTED )
+
 #define FUSEPARAM_QUEUE_HASHSIZE				128
 
 typedef void (* fuse_cb_t)(struct fuse_request_s *request);
@@ -78,15 +84,14 @@ struct fusequeue_s {
 /* actual connection to the VFS/kernel */
 
 struct fuseparam_s {
-    unsigned int				fd;
     size_t 					size;
     size_t					read;
-    unsigned char				options;
+    unsigned char				status;
     struct timespec				attr_timeout;
     struct timespec				entry_timeout;
     struct timespec				negative_timeout;
     struct context_interface_s			*interface;
-    struct bevent_xdata_s			*xdata;
+    struct fs_connection_s			connection;
     unsigned int				size_cb;
     fuse_cb_t					fuse_cb[48]; /* depends on version protocol; at this moment max opcode is 47 */
     mode_t					(* get_masked_perm)(mode_t perm, mode_t mask);
@@ -108,6 +113,8 @@ void notify_VFS_delete(void *ptr, uint64_t pino, uint64_t ino, char *name, unsig
 
 #if FUSE_VERSION >= 29
     struct fuseparam_s *fuseparam=(struct fuseparam_s *) ptr;
+    struct fs_connection_s *conn=&fuseparam->connection;
+    struct fuse_ops_s *fops=conn->io.fuse.fops;
     ssize_t alreadywritten=0;
     struct iovec iov[3];
     struct fuse_out_header oh;
@@ -133,7 +140,7 @@ void notify_VFS_delete(void *ptr, uint64_t pino, uint64_t ino, char *name, unsig
 
     replyVFS:
 
-    alreadywritten+=writev(fuseparam->fd, iov, 3);
+    alreadywritten+=(* fops->writev)(&conn->io.fuse, iov, 3);
 
 #endif
 
@@ -247,6 +254,8 @@ size_t add_direntry_plus_buffer(void *ptr, char *buffer, size_t size, off_t offs
 void notify_VFS_fsnotify(void *ptr, uint64_t ino, uint32_t mask)
 {
     struct fuseparam_s *fuseparam=(struct fuseparam_s *) ptr;
+    struct fs_connection_s *conn=&fuseparam->connection;
+    struct fuse_ops_s *fops=conn->io.fuse.fops;
     ssize_t alreadywritten=0;
     struct iovec iov[2];
     struct fuse_out_header oh;
@@ -271,13 +280,15 @@ void notify_VFS_fsnotify(void *ptr, uint64_t ino, uint32_t mask)
 
     replyVFS:
 
-    alreadywritten+=writev(fuseparam->fd, iov, 2);
+    alreadywritten+=(* fops->writev)(&conn->io.fuse, iov, 2);
 
 }
 
 void notify_VFS_fsnotify_child(void *ptr, uint64_t ino, uint32_t mask, struct name_s *xname)
 {
     struct fuseparam_s *fuseparam=(struct fuseparam_s *) ptr;
+    struct fs_connection_s *conn=&fuseparam->connection;
+    struct fuse_ops_s *fops=conn->io.fuse.fops;
     ssize_t alreadywritten=0;
     struct iovec iov[3];
     struct fuse_out_header oh;
@@ -305,7 +316,7 @@ void notify_VFS_fsnotify_child(void *ptr, uint64_t ino, uint32_t mask, struct na
 
     replyVFS:
 
-    alreadywritten+=writev(fuseparam->fd, iov, 3);
+    alreadywritten+=(* fops->writev)(&conn->io.fuse, iov, 3);
 
 }
 
@@ -323,6 +334,8 @@ void notify_VFS_fsnotify_child(void *ptr, uint64_t ino, uint32_t mask, struct na
 void reply_VFS_data(struct fuse_request_s *request, char *buffer, size_t size)
 {
     struct fuseparam_s *fuseparam=(struct fuseparam_s *) request->interface->ptr;
+    struct fs_connection_s *conn=&fuseparam->connection;
+    struct fuse_ops_s *fops=conn->io.fuse.fops;
     ssize_t alreadywritten=0;
     struct iovec iov[2];
     struct fuse_out_header oh;
@@ -339,12 +352,14 @@ void reply_VFS_data(struct fuse_request_s *request, char *buffer, size_t size)
 
     replyVFS:
 
-    alreadywritten+=writev(fuseparam->fd, iov, 2);
+    alreadywritten+=(* fops->writev)(&conn->io.fuse, iov, 2);
 }
 
 void reply_VFS_error(struct fuse_request_s *request, unsigned int error)
 {
     struct fuseparam_s *fuseparam=(struct fuseparam_s *) request->interface->ptr;
+    struct fs_connection_s *conn=&fuseparam->connection;
+    struct fuse_ops_s *fops=conn->io.fuse.fops;
     ssize_t alreadywritten=0;
     struct fuse_out_header oh;
     struct iovec iov[1];
@@ -358,7 +373,7 @@ void reply_VFS_error(struct fuse_request_s *request, unsigned int error)
 
     replyVFS:
 
-    alreadywritten+=writev(fuseparam->fd, iov, 1);
+    alreadywritten+=(* fops->writev)(&conn->io.fuse, iov, 1);
 }
 
 void reply_VFS_nosys(struct fuse_request_s *request)
@@ -395,7 +410,6 @@ static void do_init(struct fuse_request_s *request)
 
 	logoutput("do_init: unsupported kernel protocol version");
 	reply_VFS_error(request, EPROTO);
-
 	return;
 
     } else {
@@ -418,7 +432,6 @@ static void do_init(struct fuse_request_s *request)
 	    init_out.max_write = 4096; /* 4K */
 	    init_out.max_background=(1 << 16) - 1;
 	    init_out.congestion_threshold=(3 * init_out.max_background) / 4;
-
 	    reply_VFS_data(request, (char *) &init_out, sizeof(init_out));
 
 	}
@@ -474,7 +487,6 @@ static unsigned char signal_request_common(void *ptr, uint64_t unique, unsigned 
     unsigned char signal=0;
 
     pthread_mutex_lock(&datahash_mutex);
-
     index=datahash[hash];
 
     while(index) {
@@ -489,7 +501,6 @@ static unsigned char signal_request_common(void *ptr, uint64_t unique, unsigned 
 	    pthread_cond_broadcast(&fuseparam->cond);
 	    pthread_mutex_unlock(&fuseparam->mutex);
 	    signal=1;
-
 	    break;
 
 	}
@@ -499,31 +510,34 @@ static unsigned char signal_request_common(void *ptr, uint64_t unique, unsigned 
     }
 
     pthread_mutex_unlock(&datahash_mutex);
-
     return signal;
 
 }
 /* signal any thread a request is interrupted
-    called by fuse when receiving an interrupt message
-*/
+    called by fuse when receiving an interrupt message*/
 unsigned char set_request_interrupted(void *ptr, uint64_t unique)
 {
     return signal_request_common(ptr, unique, FUSEDATA_FLAG_INTERRUPTED, EINTR);
 }
 
 /* signal any thread a response is received for a request
-    called when receiving a reply from the backend
-*/
+    called when receiving a reply from the backend*/
 unsigned char signal_request_response(void *ptr, uint64_t unique)
 {
     return signal_request_common(ptr, unique, FUSEDATA_FLAG_RESPONSE, 0);
 }
 
-/* signal any thread an error occurred when processing a request
-*/
+/* signal any thread an error occurred when processing a request */
 unsigned char signal_request_error(void *ptr, uint64_t unique, unsigned int error)
 {
     return signal_request_common(ptr, unique, FUSEDATA_FLAG_ERROR, error);
+}
+static void signal_fuse_interface_common(struct fuseparam_s *fuseparam, unsigned char status)
+{
+    pthread_mutex_lock(&fuseparam->mutex);
+    fuseparam->status |= status;
+    pthread_cond_broadcast(&fuseparam->cond);
+    pthread_mutex_unlock(&fuseparam->mutex);
 }
 
 unsigned char wait_service_response(void *ptr, struct fuse_request_s *request, struct timespec *timeout)
@@ -594,11 +608,6 @@ static void _remove_datahash(struct double_index_s *index, uint64_t unique)
 
 }
 
-unsigned char fuse_request_interrupted(struct fuse_request_s *request)
-{
-    return (request->flags & FUSEDATA_FLAG_INTERRUPTED);
-}
-
 /*
     function to be done in a seperate thread
     here the data which is read from the VFS is 
@@ -655,23 +664,27 @@ static void process_fusequeue(void *data)
 
 static unsigned char fuse_request_interrupted_default(struct fuse_request_s *request)
 {
-    return (request->flags & FUSEDATA_FLAG_INTERRUPTED);
+    struct fuseparam_s *fuseparam=(struct fuseparam_s *) request->interface->ptr;
+    return ((request->flags & FUSEDATA_FLAG_INTERRUPTED) || (fuseparam->status & FUSEPARAM_STATUS_DISCONNECT));
 }
 
 static unsigned char fuse_request_interrupted_nonfuse(struct fuse_request_s *request)
 {
-    return 0;
+    struct fuseparam_s *fuseparam=(struct fuseparam_s *) request->interface->ptr;
+    return (fuseparam->status & FUSEPARAM_STATUS_DISCONNECT);
 }
 
 static int read_fuse_event(int fd, void *ptr, uint32_t events)
 {
     struct fuseparam_s *fuseparam=(struct fuseparam_s *) ptr;
-    int lenread;
+    struct fs_connection_s *conn=&fuseparam->connection;
+    struct fuse_ops_s *fops=conn->io.fuse.fops;
+    int lenread=0;
     unsigned int error=0;
 
     logoutput("read_fuse_event");
 
-    if ( events & (EPOLLERR | EPOLLHUP) ) {
+    if ((events & (EPOLLERR | EPOLLHUP)) || (events & EPOLLIN)==0) {
 
 	/* the remote side (==kernel/VFS) disconnected */
 
@@ -684,12 +697,15 @@ static int read_fuse_event(int fd, void *ptr, uint32_t events)
 
     readbuffer:
 
-    lenread=read(fuseparam->fd, fuseparam->buffer, fuseparam->size);
+    errno=0;
+    lenread=(* fops->read)(&conn->io.fuse, fuseparam->buffer, fuseparam->size);
     error=errno;
 
     /* number bytes read should be at least the size of the incoming header */
 
     if (lenread < (int) size_in_header) {
+
+	logoutput("read_fuse_event: len read %i error %i buffer size %i", lenread, error, fuseparam->size);
 
 	if (lenread==0) {
 
@@ -808,7 +824,7 @@ static int read_fuse_event(int fd, void *ptr, uint32_t events)
 
 	    replyVFS:
 
-	    alreadywritten+=writev(fuseparam->fd, iov, 1);
+	    alreadywritten+=(* fops->writev)(&conn->io.fuse, iov, 1);
 
 	}
 
@@ -820,9 +836,7 @@ static int read_fuse_event(int fd, void *ptr, uint32_t events)
 
     disconnect:
 
-    (* fuseparam->interface->disconnect)(fuseparam->interface);
-    (* fuseparam->interface->free)(fuseparam->interface);
-
+    (* fuseparam->interface->signal_context)(fuseparam->interface, "disconnect");
     return -1;
 
 }
@@ -853,12 +867,13 @@ static struct fuseparam_s *create_fuse_interface()
 
 	memset(fuseparam, 0, sizeof(struct fuseparam_s) + size);
 
-	fuseparam->fd=0;
 	fuseparam->size=size;
 	fuseparam->read=0;
-	fuseparam->options=0;
+	fuseparam->status=0;
 	fuseparam->interface=NULL;
-	fuseparam->xdata=NULL;
+	init_connection(&fuseparam->connection, FS_CONNECTION_TYPE_FUSE, FS_CONNECTION_ROLE_CLIENT);
+
+	/* change this .... make this longer for a network fs like 4/5/6 seconds */
 
 	fuseparam->attr_timeout.tv_sec=1;
 	fuseparam->attr_timeout.tv_nsec=0;
@@ -909,19 +924,12 @@ static struct fuseparam_s *create_fuse_interface()
 void disable_masking_userspace(void *ptr)
 {
     struct fuseparam_s *fuseparam=(struct fuseparam_s *) ptr;
-
-    if (fuseparam) {
-
-	fuseparam->get_masked_perm=get_masked_perm_ignore;
-
-    }
-
+    if (fuseparam) fuseparam->get_masked_perm=get_masked_perm_ignore;
 }
 
 mode_t get_masked_permissions(void *ptr, mode_t perm, mode_t mask)
 {
     struct fuseparam_s *fuseparam=(struct fuseparam_s *) ptr;
-
     return (* fuseparam->get_masked_perm)(perm, mask);
 }
 
@@ -940,59 +948,52 @@ pthread_cond_t *get_fuse_pthread_cond(struct context_interface_s *interface)
 struct timespec *get_fuse_interface_attr_timeout(void *ptr)
 {
     struct fuseparam_s *fuseparam=(struct fuseparam_s *) ptr;
-
     return &fuseparam->attr_timeout;
 }
 
 struct timespec *get_fuse_interface_entry_timeout(void *ptr)
 {
     struct fuseparam_s *fuseparam=(struct fuseparam_s *) ptr;
-
     return &fuseparam->entry_timeout;
 }
 
 struct timespec *get_fuse_interface_negative_timeout(void *ptr)
 {
     struct fuseparam_s *fuseparam=(struct fuseparam_s *) ptr;
-
     return &fuseparam->negative_timeout;
 }
 
-void close_fuse_interface(struct context_interface_s *interface)
+static void close_fuse_interface(struct fuseparam_s *fuseparam)
 {
-    struct fuseparam_s *fuseparam=(struct fuseparam_s *) interface->ptr;
-
-    if (fuseparam) {
-
-	if (fuseparam->xdata) {
-
-	    remove_xdata_from_beventloop(fuseparam->xdata);
-	    fuseparam->xdata=NULL;
-
-	}
-
-	if (fuseparam->fd>0) {
-
-	    close(fuseparam->fd);
-	    fuseparam->fd=0;
-
-	}
-
+    if (fuseparam->connection.io.fuse.xdata.fd>0) {
+	close(fuseparam->connection.io.fuse.xdata.fd);
+	fuseparam->connection.io.fuse.xdata.fd=0;
     }
-
 }
 
-void free_fuse_interface(struct context_interface_s *interface)
+void signal_fuse_interface(struct context_interface_s *interface, const char *what)
 {
     struct fuseparam_s *fuseparam=(struct fuseparam_s *) interface->ptr;
 
-    close_fuse_interface(interface);
+    if (fuseparam==NULL) return;
 
-    if (fuseparam) {
+    if (strcmp(what, "disconnecting")==0) {
 
+	signal_fuse_interface_common(fuseparam, FUSEPARAM_STATUS_DISCONNECTING);
+
+    } else if (strcmp(what, "disconnected")==0) {
+
+	signal_fuse_interface_common(fuseparam, FUSEPARAM_STATUS_DISCONNECTED);
+
+    } else if (strcmp(what, "close")==0) {
+
+	close_fuse_interface(fuseparam);
+
+    } else if (strcmp(what, "free")==0) {
+
+	close_fuse_interface(fuseparam);
 	pthread_mutex_destroy(&fuseparam->mutex);
 	pthread_cond_destroy(&fuseparam->cond);
-
 	free(fuseparam);
 	interface->ptr=NULL;
 
@@ -1004,7 +1005,7 @@ void free_fuse_interface(struct context_interface_s *interface)
     connect the fuse interface with the target: the VFS/kernel
 */
 
-static void *mount_fuse_interface(uid_t uid, struct context_interface_s *interface, struct context_address_s *address, unsigned int *error)
+static int connect_fuse_interface(uid_t uid, struct context_interface_s *interface, struct context_address_s *address, unsigned int *error)
 {
     struct fuseparam_s *fuseparam=NULL;
     char fusedevice[32];
@@ -1014,105 +1015,118 @@ static void *mount_fuse_interface(uid_t uid, struct context_interface_s *interfa
     unsigned int lenname=(address->network.type==_INTERFACE_ADDRESS_NONE && address->service.type==_INTERFACE_SERVICE_FUSE) ? strlen(address->service.target.fuse.name) : 0; /* prevent error when name not defined (see parameters check)*/
     unsigned int lentype=lenname + strlen("fuse.") + 1;
     char typestring[lentype];
-    int fd=0;
+    int fd=-1;
 
     if (!(address->network.type==_INTERFACE_ADDRESS_NONE) || !(address->service.type==_INTERFACE_SERVICE_FUSE)) {
 
 	*error=EINVAL;
-	logoutput("mount_fuse_interface: error, only fuse address");
+	logoutput("connect_fuse_interface: error, only fuse address");
 	goto error;
 
     } else if (address->service.target.fuse.source==NULL || address->service.target.fuse.mountpoint==NULL || address->service.target.fuse.name==NULL) {
 
 	*error=EINVAL;
-	logoutput("mount_fuse_interface: error, incomplete fuse target");
+	logoutput("connect_fuse_interface: error, incomplete fuse target");
 	goto error;
 
     }
-
 
     fuseparam=(struct fuseparam_s *) interface->ptr;
 
     if ( ! fuseparam) {
 
 	*error=EINVAL;
-	return NULL;
+	return -1;
 
     }
 
+    fuseparam->status = FUSEPARAM_STATUS_CONNECTING;
+
     *error=0;
     snprintf(fusedevice, 32, "/dev/fuse");
-
     fd=open(fusedevice, O_RDWR | O_NONBLOCK);
 
     if (fd <= 0) {
 
 	/* unable to open the device */
 
-	logoutput("mount_fuse_interface: unable to open %s, error %i:%s", fusedevice, errno, strerror(errno));
+	logoutput("connect_fuse_interface: unable to open %s, error %i:%s", fusedevice, errno, strerror(errno));
 	*error=errno;
 	goto error;
 
     } else {
 
-	fuseparam->fd=fd;
-	logoutput("mount_fuse_interface: fuse device %s open with %i", fusedevice, fuseparam->fd);
+	logoutput("connect_fuse_interface: fuse device %s open with %i", fusedevice, fd);
 
     }
 
-    /* construct the options to parse to mount command and session setup */
+    /* construct the options to parse to mount command and session setup
+	assume this program is running as root:root */
 
-    snprintf(mountoptions, 256, "fd=%i,rootmode=%o,user_id=0,group_id=0,default_permissions,allow_other,max_read=%i", fuseparam->fd, 755 | S_IFDIR, 4096);
+    snprintf(mountoptions, 256, "fd=%i,rootmode=%o,user_id=0,group_id=0,default_permissions,allow_other,max_read=%i", fd, 755 | S_IFDIR, 4096);
     snprintf(typestring, lentype, "fuse.%s", address->service.target.fuse.name);
     errno=0;
-
     mountflags=MS_NODEV | MS_NOEXEC | MS_NOSUID | MS_NOATIME;
 
     if (mount(address->service.target.fuse.source, address->service.target.fuse.mountpoint, typestring, mountflags, (const void *) mountoptions)==0) {
 
-	logoutput("mount_fuse_interface: (fd=%i) mounted %s, type %s with options %s", fuseparam->fd, address->service.target.fuse.mountpoint, typestring, mountoptions);
-
-	fuseparam->options |= FUSEPARAM_OPTION_MOUNTED;
-	fuseparam->xdata=(*interface->add_context_eventloop)(interface, fuseparam->fd, read_fuse_event, (void *) fuseparam, "FUSE", error);
+	logoutput("connect_fuse_interface: (fd=%i) mounted %s, type %s with options %s", fd, address->service.target.fuse.mountpoint, typestring, mountoptions);
 
     } else {
 
-	logoutput("mount_fuse_interface: error %i:%s mounting %s with options %s", errno, strerror(errno), address->service.target.fuse.mountpoint, mountoptions);
+	logoutput("connect_fuse_interface: error %i:%s mounting %s with options %s", errno, strerror(errno), address->service.target.fuse.mountpoint, mountoptions);
 	*error=errno;
+	close(fd);
 	goto error;
 
     }
 
     out:
 
-    return interface->ptr;
+    return fd;
 
     error:
 
-    free_fuse_interface(interface);
-    return NULL;
+    (* interface->signal_interface)(interface, "disconnect");
+    return -1;
 
+}
+
+static int start_fuse_interface(struct context_interface_s *interface, int fd, void *data)
+{
+    struct fuseparam_s *fuseparam=(struct fuseparam_s *) interface->ptr;
+    unsigned int error=0;
+
+    logoutput("start_fuse_interface");
+
+    if ((*interface->add_context_eventloop)(interface, &fuseparam->connection, fd, read_fuse_event, (void *) fuseparam, "FUSE", &error)==0) {
+
+	logoutput("start_fuse_interface: %i added to eventloop", fd);
+	fuseparam->status |= FUSEPARAM_STATUS_CONNECTED;
+	return 0;
+
+    }
+
+    logoutput("start_fuse_interface: error %i adding %i to eventloop", error, fd, strerror(error));
+    return -1;
 }
 
 int init_fuse_interface(struct context_interface_s *interface)
 {
     struct fuseparam_s *fuseparam=NULL;
 
-    /*
-	initialize the buffer to read the data from the VFS -> userspace
-	for this workspace (=mountpoint)
-    */
+    /* initialize the buffer to read the data from the VFS -> userspace
+	for this workspace (=mountpoint) */
 
     fuseparam=create_fuse_interface();
 
     if (fuseparam) {
 
 	fuseparam->interface=interface;
-
-	interface->connect=mount_fuse_interface;
-	interface->free=free_fuse_interface;
+	interface->connect=connect_fuse_interface;
+	interface->start=start_fuse_interface;
+	interface->signal_interface=signal_fuse_interface;
 	interface->ptr=(void *) fuseparam;
-
 	return 0;
 
     }

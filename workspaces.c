@@ -84,7 +84,7 @@ void clear_workspace_mount(struct workspace_mount_s *workspace)
     if (directory) {
 	struct service_context_s *context=workspace->context;
 
-	clear_directory(&context->interface, directory, NULL, NULL);
+	clear_directory(&context->interface, directory);
 	destroy_directory(directory);
 
     }
@@ -219,7 +219,7 @@ int mount_workspace_mount(struct service_context_s *context, char *source, char 
 
 void umount_workspace_mount(struct service_context_s *context)
 {
-    (* context->interface.free)(&context->interface);
+    (* context->interface.signal_interface)(&context->interface, "disconnect");
 }
 
 /*
