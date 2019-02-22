@@ -55,6 +55,7 @@ struct simple_lock_s {
 
 /* prototypes */
 
+void init_simple_nonelock(struct simple_locking_s *locking, struct simple_lock_s *lock);
 void init_simple_readlock(struct simple_locking_s *locking, struct simple_lock_s *rlock);
 void init_simple_writelock(struct simple_locking_s *locking, struct simple_lock_s *wlock);
 

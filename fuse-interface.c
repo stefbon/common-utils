@@ -38,6 +38,7 @@
 #include <sys/uio.h>
 #include <fcntl.h>
 #include <dirent.h>
+#include <pwd.h>
 
 #ifndef ENOATTR
 #define ENOATTR ENODATA        /* No such attribute */
@@ -1016,6 +1017,8 @@ static int connect_fuse_interface(uid_t uid, struct context_interface_s *interfa
     unsigned int lentype=lenname + strlen("fuse.") + 1;
     char typestring[lentype];
     int fd=-1;
+    struct passwd *pwd=NULL;
+    gid_t gid=0;
 
     if (!(address->network.type==_INTERFACE_ADDRESS_NONE) || !(address->service.type==_INTERFACE_SERVICE_FUSE)) {
 
@@ -1060,10 +1063,22 @@ static int connect_fuse_interface(uid_t uid, struct context_interface_s *interfa
 
     }
 
+    pwd=getpwuid(uid);
+    if (pwd) gid=pwd->pw_gid;
+
     /* construct the options to parse to mount command and session setup
 	assume this program is running as root:root */
 
-    snprintf(mountoptions, 256, "fd=%i,rootmode=%o,user_id=0,group_id=0,default_permissions,allow_other,max_read=%i", fd, 755 | S_IFDIR, 4096);
+    if (uid>0 && gid>0) {
+
+	snprintf(mountoptions, 256, "fd=%i,rootmode=%o,user_id=%i,group_id=%i,default_permissions,max_read=%i", fd, 755 | S_IFDIR, uid, gid, 4096);
+
+    } else {
+
+	snprintf(mountoptions, 256, "fd=%i,rootmode=%o,user_id=0,group_id=0,default_permissions,allow_other,max_read=%i", fd, 755 | S_IFDIR, 4096);
+
+    }
+
     snprintf(typestring, lentype, "fuse.%s", address->service.target.fuse.name);
     errno=0;
     mountflags=MS_NODEV | MS_NOEXEC | MS_NOSUID | MS_NOATIME;

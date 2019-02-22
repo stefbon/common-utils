@@ -273,13 +273,13 @@ void _fs_common_cached_create(struct service_context_s *context, struct fuse_req
 
 }
 
-void _fs_common_virtual_lookup(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, const char *name, unsigned int len)
+void _fs_common_virtual_lookup(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *pinode, const char *name, unsigned int len)
 {
-    struct entry_s *parent=inode->alias, *entry=NULL;
+    struct entry_s *parent=pinode->alias, *entry=NULL;
     struct name_s xname={NULL, 0, 0};
     unsigned int error=0;
 
-    logoutput("_fs_common_virtual_lookup: name %.*s %li (thread %i)", len, name, (long) inode->st.st_ino, (int) gettid());
+    logoutput("_fs_common_virtual_lookup: name %.*s parent %li (thread %i)", len, name, (long) pinode->st.st_ino, (int) gettid());
 
     xname.name=(char *)name;
     xname.len=strlen(name);
@@ -297,7 +297,7 @@ void _fs_common_virtual_lookup(struct service_context_s *context, struct fuse_re
 
 	log_inode_information(inode, INODE_INFORMATION_NAME | INODE_INFORMATION_NLOOKUP | INODE_INFORMATION_MODE | INODE_INFORMATION_SIZE | INODE_INFORMATION_MTIM | INODE_INFORMATION_INODE_LINK | INODE_INFORMATION_FS_COUNT);
 
-	logoutput("_fs_common_virtual_lookup: name %.*s nlookup %i", entry->name.len, entry->name.name, inode->nlookup);
+	logoutput("_fs_common_virtual_lookup: found entry %.*s ino %li nlookup %i", entry->name.len, entry->name.name, inode->st.st_ino, inode->nlookup);
 	inode->nlookup++;
 	fs_get_inode_link(inode, &link);
 
@@ -324,7 +324,7 @@ void _fs_common_virtual_lookup(struct service_context_s *context, struct fuse_re
 
 	}
 
-	_fs_common_cached_lookup(context, request, entry->inode);
+	_fs_common_cached_lookup(context, request, inode);
 
     } else {
 

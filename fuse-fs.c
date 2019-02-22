@@ -87,7 +87,7 @@ void fuse_fs_forget(struct fuse_request_s *request)
     struct fuse_forget_in *forget_in=(struct fuse_forget_in *) request->buffer;
     struct service_context_s *context=NULL;
 
-    logoutput("FORGET: ino %lli (thread %i)", (long long) request->ino, (int) gettid());
+    // logoutput("FORGET (thread %i): ino %lli forget %i", (int) gettid(), (long long) request->ino, forget_in->nlookup);
 
     context=get_service_context(request->interface);
     queue_inode_2forget(request->ino, context->unique, FORGET_INODE_FLAG_FORGET, forget_in->nlookup);
@@ -100,11 +100,16 @@ void fuse_fs_forget_multi(struct fuse_request_s *request)
     struct fuse_forget_one *forgets=(struct fuse_forget_one *) (request->buffer + sizeof(struct fuse_batch_forget_in));
     unsigned int i=0;
 
-    logoutput("FORGET_MULTI: (thread %i) count %i", (int) gettid(), batch_forget_in->count);
+    // logoutput("FORGET_MULTI: (thread %i) count %i", (int) gettid(), batch_forget_in->count);
 
     context=get_service_context(request->interface);
 
-    for (i=0; i<batch_forget_in->count; i++) queue_inode_2forget(forgets[i].nodeid, context->unique, FORGET_INODE_FLAG_FORGET, forgets[i].nlookup);
+    for (i=0; i<batch_forget_in->count; i++) {
+
+	// logoutput("FORGET_MULTI: ino %lli forget %i", (int) gettid(), forgets[i].nodeid);
+	queue_inode_2forget(forgets[i].nodeid, context->unique, FORGET_INODE_FLAG_FORGET, forgets[i].nlookup);
+
+    }
 
 }
 

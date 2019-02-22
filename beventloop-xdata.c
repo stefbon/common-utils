@@ -105,6 +105,12 @@ int strcmp_bevent(struct bevent_xdata_s *xdata, char *name, unsigned int *error)
 
 }
 
+static int xdata_dummy_cb(int fd, void *data, uint32_t events)
+{
+    logoutput("xdata_dummy_cb");
+    return 0;
+}
+
 void init_xdata(struct bevent_xdata_s *xdata)
 {
     unsigned int error=0;
@@ -114,7 +120,7 @@ void init_xdata(struct bevent_xdata_s *xdata)
     xdata->fd=0;
     xdata->data=NULL;
     xdata->status=0;
-    xdata->callback=NULL;
+    xdata->callback=xdata_dummy_cb;
     init_list_element(&xdata->list, NULL);
     xdata->loop=NULL;
 

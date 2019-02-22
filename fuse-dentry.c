@@ -582,6 +582,8 @@ void queue_inode_2forget(ino_t ino, dev_t dev, unsigned int flags, uint64_t forg
 {
     struct inode_2delete_s *i2d=NULL;
 
+    logoutput("queue_inode_2forget: ino %lli forget %lli", ino, forget);
+
     i2d=malloc(sizeof(struct inode_2delete_s));
 
     if (i2d) {
