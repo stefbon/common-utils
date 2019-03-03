@@ -116,8 +116,7 @@ int init_beventloop(struct beventloop_s *loop, unsigned int *error)
 
     if (loop->fd==-1) {
 
-	logoutput("init_beventloop: error %i creating epoll instance (%s)", errno, strerror(errno));
-
+	logoutput_warning("init_beventloop: error %i creating epoll instance (%s)", errno, strerror(errno));
 	*error=errno;
 	goto error;
 
@@ -169,12 +168,9 @@ int start_beventloop(struct beventloop_s *loop)
 
         }
 
-	logoutput("start_beventloop: wakeup %i", count);
-
         for (unsigned int i=0; i<count; i++) {
 
             xdata=(struct bevent_xdata_s *) epoll_events[i].data.ptr;
-            logoutput("start_beventloop: xdata name %s", xdata->name);
 	    result=(*xdata->callback) (xdata->fd, xdata->data, epoll_events[i].events);
 
         }

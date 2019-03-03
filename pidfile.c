@@ -46,8 +46,9 @@ void create_pid_file(struct pathinfo_s *pathinfo)
     char path[pathinfo->len + 32]; /* must be enough to hold the durectory and the %pid%.pid file */
     char *slash=NULL;
 
+    memset(path, '\0', pathinfo->len + 32);
     memcpy(path, pathinfo->path, pathinfo->len + 1);
-    unslash(path);
+    // unslash(path);
 
     slash=strrchr(path, '/');
 
