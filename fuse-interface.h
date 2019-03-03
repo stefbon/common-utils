@@ -47,6 +47,7 @@ void notify_VFS_change(void *ptr, uint64_t ino, uint32_t mask);
 void notify_VFS_fsnotify(void *ptr, uint64_t  ino, uint32_t mask);
 void notify_VFS_fsnotify_child(void *ptr, uint64_t ino, uint32_t mask, struct name_s *xname);
 
+int compare_format_mountoptions(struct context_interface_s *interface, char *mountoptions, uid_t uid, gid_t gid);
 int init_fuse_interface(struct context_interface_s *interface);
 void register_fuse_function(void *ptr, uint32_t opcode, void (* func) (struct fuse_request_s *request));
 

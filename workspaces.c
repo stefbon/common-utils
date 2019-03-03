@@ -136,7 +136,7 @@ int init_workspace_mount(struct workspace_mount_s *workspace, unsigned int *erro
     workspace->syncdate.tv_sec=0;
     workspace->syncdate.tv_nsec=0;
     workspace->status=0;
-    workspace->fscount=0;
+    workspace->dev=0;
 
     workspace->free=free_workspace_mount;
     init_list_header(&workspace->contexes, SIMPLE_LIST_TYPE_EMPTY, NULL);

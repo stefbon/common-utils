@@ -678,6 +678,8 @@ static void _clear_directory(struct context_interface_s *i, struct directory_s *
     struct entry_s *entry=NULL, *next=NULL;
     struct inode_s *inode=NULL;
 
+    logoutput("_clear_directory: level %i path %s", level, path);
+
     entry=(struct entry_s *) directory->first;
 
     while (entry) {

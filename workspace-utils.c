@@ -184,11 +184,7 @@ char *get_path_from_template(char *template, struct fuse_user_s *user, char *buf
 
     }
 
-    if (conversion) {
-
-	logoutput_notice("get_path_from_template: result %s", conversion);
-
-    }
+    if (conversion) logoutput_notice("get_path_from_template: result %s", conversion);
 
     return conversion;
 
@@ -339,10 +335,8 @@ static struct workspace_base_s *read_workspace_file(char *workspacefile, char *n
     if ( out) {
 
 	memcpy(out, &base, sizeof(struct workspace_base_s));
-
 	out->next=base_list;
 	base_list=out;
-
 	return out;
 
     }

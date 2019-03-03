@@ -1002,9 +1002,94 @@ void signal_fuse_interface(struct context_interface_s *interface, const char *wh
 
 }
 
-/*
-    connect the fuse interface with the target: the VFS/kernel
-*/
+mode_t get_default_rootmode_fuse_mountpoint()
+{
+    return (S_IFDIR | S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+}
+
+mode_t get_rootmode_fuse_mountpoint(struct context_interface_s *interface)
+{
+    struct context_option_s option;
+    mode_t rootmode=0;
+
+    memset(&option, 0, sizeof(struct context_option_s));
+    option.type=_INTERFACE_OPTION_INT;
+
+    if ((* interface->get_context_option)(interface, "fuse:rootmode", &option)>0) rootmode=(mode_t) option.value.number;
+
+    return (rootmode>0) ? rootmode : get_default_rootmode_fuse_mountpoint();
+}
+
+unsigned int get_default_maxread_fuse_mountpoint()
+{
+    return 8192;
+}
+
+unsigned int get_maxread_fuse_mountpoint(struct context_interface_s *interface)
+{
+    struct context_option_s option;
+    unsigned int maxread=0;
+
+    memset(&option, 0, sizeof(struct context_option_s));
+    option.type=_INTERFACE_OPTION_INT;
+
+    if ((* interface->get_context_option)(interface, "fuse:maxread", &option)>0) maxread=(unsigned int) option.value.number;
+
+    return (maxread>0) ? maxread : get_default_maxread_fuse_mountpoint();
+}
+
+static int get_format_mountoptions(char **format)
+{
+    *format=strdup("fd=%i,rootmode=%o,user_id=%i,group_id=%i,default_permissions,max_read=%i");
+    return (*format) ? strlen(*format) : -1;
+}
+
+static int print_format_mountoptions(struct context_interface_s *interface, char *buffer, unsigned int size, int fd, uid_t uid, gid_t gid)
+{
+    char *format=NULL;
+    int result=-1;
+
+    if (get_format_mountoptions(&format)>0) {
+	mode_t rootmode=get_rootmode_fuse_mountpoint(interface);
+	unsigned int maxread=get_maxread_fuse_mountpoint(interface);
+
+	result=snprintf(buffer, size, format, fd, rootmode, uid, gid, maxread);
+	free(format);
+
+    }
+
+    return result;
+}
+
+int compare_format_mountoptions(struct context_interface_s *interface, char *mountoptions, uid_t uid, gid_t gid)
+{
+    int result=-1;
+    char *format=NULL;
+
+    if (get_format_mountoptions(&format)>0) {
+	int s_fd=0;
+	mode_t s_rootmode=0;
+	int s_uid=0;
+	int s_gid=0;
+	int s_max=0;
+
+	/* get the parameters from the mountoptions given the format
+	    important are the uid and the gid */
+
+	if (sscanf(mountoptions, format, &s_fd, &s_rootmode, &s_uid, &s_gid, &s_max)==5) {
+
+	    if (s_uid==uid && s_gid==gid && 
+	    ((interface && s_rootmode==get_rootmode_fuse_mountpoint(interface)) || interface==NULL)) result=0;
+
+	}
+
+    }
+
+    return result;
+
+}
+
+/* connect the fuse interface with the target: the VFS/kernel */
 
 static int connect_fuse_interface(uid_t uid, struct context_interface_s *interface, struct context_address_s *address, unsigned int *error)
 {
@@ -1012,13 +1097,8 @@ static int connect_fuse_interface(uid_t uid, struct context_interface_s *interfa
     char fusedevice[32];
     char mountoptions[256];
     unsigned int mountflags=0;
-    unsigned int len=(address->network.type==_INTERFACE_ADDRESS_NONE && address->service.type==_INTERFACE_SERVICE_FUSE) ? strlen(address->service.target.fuse.mountpoint) : 0;
-    unsigned int lenname=(address->network.type==_INTERFACE_ADDRESS_NONE && address->service.type==_INTERFACE_SERVICE_FUSE) ? strlen(address->service.target.fuse.name) : 0; /* prevent error when name not defined (see parameters check)*/
-    unsigned int lentype=lenname + strlen("fuse.") + 1;
-    char typestring[lentype];
     int fd=-1;
     struct passwd *pwd=NULL;
-    gid_t gid=0;
 
     if (!(address->network.type==_INTERFACE_ADDRESS_NONE) || !(address->service.type==_INTERFACE_SERVICE_FUSE)) {
 
@@ -1035,16 +1115,14 @@ static int connect_fuse_interface(uid_t uid, struct context_interface_s *interfa
     }
 
     fuseparam=(struct fuseparam_s *) interface->ptr;
-
-    if ( ! fuseparam) {
+    if (fuseparam==NULL) {
 
 	*error=EINVAL;
-	return -1;
+	goto error;
 
     }
 
     fuseparam->status = FUSEPARAM_STATUS_CONNECTING;
-
     *error=0;
     snprintf(fusedevice, 32, "/dev/fuse");
     fd=open(fusedevice, O_RDWR | O_NONBLOCK);
@@ -1064,44 +1142,35 @@ static int connect_fuse_interface(uid_t uid, struct context_interface_s *interfa
     }
 
     pwd=getpwuid(uid);
-    if (pwd) gid=pwd->pw_gid;
 
-    /* construct the options to parse to mount command and session setup
-	assume this program is running as root:root */
+    if (print_format_mountoptions(interface, mountoptions, 256, fd, uid, ((pwd) ? pwd->pw_gid : 0))<=0) {
 
-    if (uid>0 && gid>0) {
-
-	snprintf(mountoptions, 256, "fd=%i,rootmode=%o,user_id=%i,group_id=%i,default_permissions,max_read=%i", fd, 755 | S_IFDIR, uid, gid, 4096);
-
-    } else {
-
-	snprintf(mountoptions, 256, "fd=%i,rootmode=%o,user_id=0,group_id=0,default_permissions,allow_other,max_read=%i", fd, 755 | S_IFDIR, 4096);
+	*error=errno;
+	goto error;
 
     }
 
-    snprintf(typestring, lentype, "fuse.%s", address->service.target.fuse.name);
     errno=0;
     mountflags=MS_NODEV | MS_NOEXEC | MS_NOSUID | MS_NOATIME;
 
-    if (mount(address->service.target.fuse.source, address->service.target.fuse.mountpoint, typestring, mountflags, (const void *) mountoptions)==0) {
+    if (mount(address->service.target.fuse.source, address->service.target.fuse.mountpoint, "fuse", mountflags, (const void *) mountoptions)==0) {
 
-	logoutput("connect_fuse_interface: (fd=%i) mounted %s, type %s with options %s", fd, address->service.target.fuse.mountpoint, typestring, mountoptions);
+	logoutput("connect_fuse_interface: (fd=%i) mounted %s, type fuse with options %s", fd, address->service.target.fuse.mountpoint, mountoptions);
 
     } else {
 
 	logoutput("connect_fuse_interface: error %i:%s mounting %s with options %s", errno, strerror(errno), address->service.target.fuse.mountpoint, mountoptions);
 	*error=errno;
-	close(fd);
 	goto error;
 
     }
 
     out:
-
     return fd;
 
     error:
 
+    if (fd>0) close(fd);
     (* interface->signal_interface)(interface, "disconnect");
     return -1;
 

@@ -20,7 +20,7 @@
 #ifndef SB_COMMON_UTILS_MOUNTINFO_MONITOR_H
 #define SB_COMMON_UTILS_MOUNTINFO_MONITOR_H
 
-#define MOUNTINFO_FILE "/proc/self/mountinfo"
+#include "simple-locking.h"
 
 typedef int (* update_cb_t) (unsigned long generation, struct mountentry_s *(*next) (void **index, unsigned long generation, unsigned char type));
 typedef unsigned char (* ignore_cb_t) (char *source, char *fs, char *path);
@@ -33,5 +33,9 @@ void set_ignorefunc_mountmonitor(ignore_cb_t cb);
 void set_threadsqueue_mountmonitor(void *ptr);
 
 struct mountentry_s *get_next_mountentry(void **index, unsigned long generation, unsigned char type);
+
+int lock_mountlist_read(struct simple_lock_s *lock);
+int lock_mountlist_write(struct simple_lock_s *lock);
+int unlock_mountlist(struct simple_lock_s *lock);
 
 #endif

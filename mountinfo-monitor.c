@@ -52,6 +52,7 @@
 #include "utils.h"
 
 #define MOUNT_MONITOR_FLAG_INIT			1
+#define MOUNTINFO_FILE "/proc/self/mountinfo"
 
 struct mountinfo_monitor_s {
     int 					(*update) (unsigned long generation_id, struct mountentry_s *(*next) (void **index, unsigned long g, unsigned char type));
@@ -64,6 +65,7 @@ struct mountinfo_monitor_s {
     unsigned int				size;
     void 					*threadsqueue;
     unsigned int				flags;
+    struct simple_locking_s 			locking;
 };
 
 /* private structs for internal use only */
@@ -85,9 +87,6 @@ struct mountinfo_list_s {
     struct list_header_s			mountinfo;
     struct list_header_s			mountentry;
 };
-
-/* these procedures maintain the current mounts,
-    and run a specific cb for every mount added or removed */
 
 /* added, removed and keep mount entries */
 
@@ -113,11 +112,27 @@ void free_mountentry(void *data)
 	if (mountentry->source) free(mountentry->source);
 	if (mountentry->options) free(mountentry->options);
 	if (mountentry->rootpath) free(mountentry->rootpath);
-
 	free(mountentry);
 
     }
 
+}
+
+int lock_mountlist_read(struct simple_lock_s *lock)
+{
+    init_simple_readlock(&mount_monitor.locking, lock);
+    return simple_lock(lock);
+}
+
+int lock_mountlist_write(struct simple_lock_s *lock)
+{
+    init_simple_writelock(&mount_monitor.locking, lock);
+    return simple_lock(lock);
+}
+
+int unlock_mountlist(struct simple_lock_s *lock)
+{
+    return simple_unlock(lock);
 }
 
 /*dummy callbacks*/
@@ -142,6 +157,7 @@ int open_mountmonitor(struct bevent_xdata_s *xdata, unsigned int *error)
 
     }
 
+    init_simple_locking(&mount_monitor.locking);
     init_list_header(&current_mounts, SIMPLE_LIST_TYPE_EMPTY, NULL);
     init_list_header(&removed_mounts, SIMPLE_LIST_TYPE_EMPTY, NULL);
 
@@ -217,6 +233,8 @@ void close_mountmonitor()
 	mount_monitor.buffer=NULL;
 
     }
+
+    clear_simple_locking(&mount_monitor.locking);
 
 }
 
@@ -339,6 +357,8 @@ struct mountentry_s *get_next_mountentry(void **index, unsigned long generation,
 
 }
 
+/* read one line from mountinfo */
+
 static void read_mountinfo_values(char *buffer, unsigned int size, struct mountinfo_list_s *list)
 {
     int mountid=0;
@@ -354,10 +374,10 @@ static void read_mountinfo_values(char *buffer, unsigned int size, struct mounti
     char *pos=NULL;
     struct mountentry_s *mountentry=NULL;
     struct mountinfo_s *mountinfo=NULL;
-    int left=size;
+    unsigned int left=size;
     int error=0;
-
-    // logoutput("read_mountinfo_values");
+    char tmp[256];
+    unsigned int len=0;
 
     pos=buffer;
 
@@ -368,6 +388,10 @@ static void read_mountinfo_values(char *buffer, unsigned int size, struct mounti
 
     }
 
+    len=snprintf(tmp, 256, "%i %i %i:%i", mountid, parentid, major, minor);
+    pos+=len;
+    left-=len;
+
     /* root */
 
     sep=memchr(pos, '/', left);
@@ -377,14 +401,10 @@ static void read_mountinfo_values(char *buffer, unsigned int size, struct mounti
 
     sep=memchr(pos, ' ', left);
     if (! sep) goto dofree;
-
-    /* unescape */
-
     *sep='\0';
-    root=g_strcompress(pos);
+    root=g_strcompress(pos); /* unescape */
     if (! root) goto dofree;
     *sep=' ';
-
     left-=(unsigned int) (sep-pos);
     pos=sep;
 
@@ -394,26 +414,21 @@ static void read_mountinfo_values(char *buffer, unsigned int size, struct mounti
     if (! sep) goto dofree;
     left-=(unsigned int) (sep-pos);
     pos=sep;
-
     sep=memchr(pos, ' ', left);
     if (! sep) goto dofree;
 
-    /* unescape */
-
     *sep='\0';
-    mountpoint=g_strcompress(pos);
+    mountpoint=g_strcompress(pos); /* unescape */
     if (! mountpoint) goto dofree;
     *sep=' ';
-
     left-=(unsigned int) (sep-pos);
     pos=sep;
 
-    /* skip rest here, and start at the seperator - */
+    /* skip rest here, and start at the seperator - where filesystem, source and options can be found */
 
     sep=strstr(pos, " - ");
     if ( ! sep ) goto dofree;
     sep+=3;
-
     left-=(unsigned int) (sep-pos);
     pos=sep;
 
@@ -421,7 +436,6 @@ static void read_mountinfo_values(char *buffer, unsigned int size, struct mounti
 
     sep=memchr(pos, ' ', left);
     if ( ! sep ) goto dofree;
-
     *sep='\0';
     fs=g_strcompress(pos);
     if (! fs) goto dofree;
@@ -588,54 +602,13 @@ static void read_mountinfo_values(char *buffer, unsigned int size, struct mounti
 
     dofree:
 
-    if (mountpoint) {
-
-	free(mountpoint);
-	mountpoint=NULL;
-
-    }
-
-    if (root) {
-
-	free(root);
-	root=NULL;
-
-    }
-
-    if (fs) {
-
-	free(fs);
-	fs=NULL;
-
-    }
-
-    if (source) {
-
-	free(source);
-	source=NULL;
-
-    }
-
-    if (options) {
-
-	free(options);
-	options=NULL;
-
-    }
-
-    if (mountinfo) {
-
-	free(mountinfo);
-	mountinfo=NULL;
-
-    }
-
-    if (mountentry) {
-
-	free(mountentry);
-	mountentry=NULL;
-
-    }
+    if (mountpoint) free(mountpoint);
+    if (root) free(root);
+    if (fs) free(fs);
+    if (source) free(source);
+    if (options) free(options);
+    if (mountinfo) free(mountinfo);
+    if (mountentry) free(mountentry);
 
 }
 
@@ -731,13 +704,14 @@ void handle_change_mounttable(unsigned char init)
     unsigned long generation=0;
     unsigned int error=0;
     unsigned int count_added=0;
+    struct simple_lock_s wlock;
 
     logoutput("handle_change_mounttable");
 
     init_list_header(&new_list.mountinfo, SIMPLE_LIST_TYPE_EMPTY, NULL);
     init_list_header(&new_list.mountentry, SIMPLE_LIST_TYPE_EMPTY, NULL);
 
-    lock_mountlist("write", &error);
+    lock_mountlist_write(&wlock);
 
     generation=generation_id();
     increase_generation_id();
@@ -894,7 +868,7 @@ void handle_change_mounttable(unsigned char init)
 
     }
 
-    unlock_mountlist("write", &error);
+    unlock_mountlist(&wlock);
 
 }
 

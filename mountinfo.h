@@ -56,11 +56,6 @@ unsigned long get_uniquectr();
 void increase_generation_id();
 unsigned long generation_id();
 
-int lock_mountlist(const char *what, unsigned int *error);
-int unlock_mountlist(const char *what, unsigned int *error);
-
-unsigned char get_mountinfo_changed();
-
 int compare_mount_entries(struct mountentry_s *a, struct mountentry_s *b);
 void check_mounted_by_autofs(struct mountentry_s *mountentry);
 

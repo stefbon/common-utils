@@ -106,7 +106,6 @@ static int _simple_readlock(struct simple_lock_s *rlock)
     struct simple_locking_s *locking=rlock->locking;
 
     rlock->thread=pthread_self();
-
     pthread_mutex_lock(&locking->mutex);
 
     if ((rlock->flags & SIMPLE_LOCK_FLAG_LIST)==0) {
@@ -121,7 +120,6 @@ static int _simple_readlock(struct simple_lock_s *rlock)
     }
 
     rlock->flags|=SIMPLE_LOCK_FLAG_EFFECTIVE;
-
     pthread_mutex_unlock(&locking->mutex);
     return 0;
 
@@ -146,11 +144,8 @@ static int _simple_readunlock(struct simple_lock_s *rlock)
 
     if (rlock->flags & SIMPLE_LOCK_FLAG_EFFECTIVE) rlock->flags -= SIMPLE_LOCK_FLAG_EFFECTIVE;
     pthread_mutex_unlock(&locking->mutex);
-
     return 0;
 }
-
-
 
 /* full write lock */
 
@@ -159,7 +154,6 @@ static int _simple_writelock(struct simple_lock_s *wlock)
     struct simple_locking_s *locking=wlock->locking;
 
     wlock->thread=pthread_self();
-
     pthread_mutex_lock(&locking->mutex);
 
     if ((wlock->flags & SIMPLE_LOCK_FLAG_LIST)==0) {
@@ -300,7 +294,6 @@ static int _simple_prereadlock(struct simple_lock_s *rlock)
 }
 void init_simple_nonelock(struct simple_locking_s *locking, struct simple_lock_s *lock)
 {
-
     lock->type=SIMPLE_LOCK_TYPE_NONE;
     lock->thread=0;
     init_list_element(&lock->list, NULL);
@@ -310,12 +303,9 @@ void init_simple_nonelock(struct simple_locking_s *locking, struct simple_lock_s
     lock->unlock=_simple_noneunlock;
     lock->upgrade=_simple_upgrade_nonelock;
     lock->prelock=_simple_prenonelock;
-
 }
-
 void init_simple_readlock(struct simple_locking_s *locking, struct simple_lock_s *rlock)
 {
-
     rlock->type=SIMPLE_LOCK_TYPE_READ;
     rlock->thread=0;
     init_list_element(&rlock->list, NULL);
@@ -325,12 +315,9 @@ void init_simple_readlock(struct simple_locking_s *locking, struct simple_lock_s
     rlock->unlock=_simple_readunlock;
     rlock->upgrade=_simple_upgrade_readlock;
     rlock->prelock=_simple_prereadlock;
-
 }
-
 void init_simple_writelock(struct simple_locking_s *locking, struct simple_lock_s *wlock)
 {
-
     wlock->type=SIMPLE_LOCK_TYPE_WRITE;
     wlock->thread=0;
     init_list_element(&wlock->list, NULL);
@@ -340,7 +327,6 @@ void init_simple_writelock(struct simple_locking_s *locking, struct simple_lock_
     wlock->unlock=_simple_writeunlock;
     wlock->upgrade=_simple_upgrade_writelock;
     wlock->prelock=_simple_prewritelock;
-
 }
 
 int simple_lock(struct simple_lock_s *lock)

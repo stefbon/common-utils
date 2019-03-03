@@ -174,7 +174,6 @@ struct service_fs_s {
     void (*removexattr) (struct service_context_s *context, struct fuse_request_s *request, struct pathinfo_s *pathinfo, struct inode_s *inode, const char *name);
 
     void (*fsnotify)(struct service_context_s *context, struct fuse_request_s *request, struct pathinfo_s *pathinfo, uint64_t unique, uint32_t mask);
-
     void (*statfs)(struct service_context_s *context, struct fuse_request_s *request, struct pathinfo_s *pathinfo);
 
 };
@@ -185,9 +184,9 @@ struct workspace_mount_s {
     struct fuse_user_s 				*user;
     struct workspace_base_s			*base;
     struct service_context_s			*context;
+    dev_t					dev;
     struct inode_s 				rootinode;
     unsigned long long 				nrinodes;
-    unsigned char				fscount;
     unsigned int				pathmax;
     pthread_mutex_t				mutex;
     struct pathinfo_s 				mountpoint;

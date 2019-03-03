@@ -44,20 +44,6 @@
 #include "utils.h"
 #include "logging.h"
 
-/* one global lock */
-
-#define MOUNTINFO_STATUS_NONE			0
-#define MOUNTINFO_STATUS_READ			1
-#define MOUNTINFO_STATUS_WRITE			2
-
-struct mountmanager_struct {
-    pthread_mutex_t mutex;
-    pthread_cond_t cond;
-    unsigned char status;
-    unsigned char readers;
-};
-
-static struct mountmanager_struct mountmanager={PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER, 0, 0};
 static struct mountentry_s *rootmount=NULL;
 static unsigned long uniquectr=1;
 static pthread_mutex_t ctr_mutex=PTHREAD_MUTEX_INITIALIZER;
@@ -107,124 +93,11 @@ int compare_mount_entries(struct mountentry_s *a, struct mountentry_s *b)
     if (diff==0) {
 
         diff=g_strcmp0(a->source, b->source);
-
         if (diff==0) diff=g_strcmp0(a->fs, b->fs);
 
     }
 
     return diff;
-
-}
-
-static int lock_mountlist_read(unsigned int *error)
-{
-    pthread_mutex_lock(&mountmanager.mutex);
-
-    while(mountmanager.status & MOUNTINFO_STATUS_WRITE) {
-
-	pthread_cond_wait(&mountmanager.cond, &mountmanager.mutex);
-
-    }
-
-    mountmanager.readers++;
-
-    *error=0;
-
-    pthread_cond_signal(&mountmanager.cond);
-    pthread_mutex_unlock(&mountmanager.mutex);
-
-    return 0;
-
-}
-
-static int unlock_mountlist_read(unsigned int *error)
-{
-    pthread_mutex_lock(&mountmanager.mutex);
-
-    mountmanager.readers--;
-
-    *error=0;
-
-    pthread_cond_signal(&mountmanager.cond);
-    pthread_mutex_unlock(&mountmanager.mutex);
-
-    return 0;
-
-}
-
-static int lock_mountlist_write(unsigned int *error)
-{
-
-    pthread_mutex_lock(&mountmanager.mutex);
-
-    *error=0;
-
-    while ((mountmanager.status & MOUNTINFO_STATUS_WRITE) || mountmanager.readers>0) {
-
-	pthread_cond_wait(&mountmanager.cond, &mountmanager.mutex);
-
-    }
-
-    mountmanager.status|=MOUNTINFO_STATUS_WRITE;
-
-    unlock:
-
-    pthread_mutex_unlock(&mountmanager.mutex);
-
-    return 0;
-
-}
-
-static int unlock_mountlist_write(unsigned int *error)
-{
-    pthread_mutex_lock(&mountmanager.mutex);
-
-    if (mountmanager.status & MOUNTINFO_STATUS_WRITE) mountmanager.status-=MOUNTINFO_STATUS_WRITE;
-
-    pthread_cond_signal(&mountmanager.cond);
-    pthread_mutex_unlock(&mountmanager.mutex);
-
-    return 0;
-
-}
-
-int lock_mountlist(const char *what, unsigned int *error)
-{
-
-    *error=0;
-
-    if (strcmp(what, "read")==0) {
-
-	return lock_mountlist_read(error);
-
-    } else if (strcmp(what, "write")==0) {
-
-	return lock_mountlist_write(error);
-
-    }
-
-    *error=EINVAL;
-    return -1;
-
-}
-
-int unlock_mountlist(const char *what, unsigned int *error)
-{
-
-    *error=0;
-
-    if (strcmp(what, "read")==0) {
-
-	return unlock_mountlist_read(error);
-
-    } else if (strcmp(what, "write")==0) {
-
-	return unlock_mountlist_write(error);
-
-    }
-
-    *error=EINVAL;
-    return -1;
 
 }
 

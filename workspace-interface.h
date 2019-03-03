@@ -95,6 +95,9 @@ struct context_address_s {
 #define CONTEXT_INTERFACE_BACKEND_SFTP_PREFIX_ROOT					2
 #define CONTEXT_INTERFACE_BACKEND_SFTP_PREFIX_CUSTOM					3
 
+#define CONTEXT_INTERFACE_BACKEND_SFTP_FLAG_STATFS_OPENSSH				1
+#define CONTEXT_INTERFACE_BACKEND_SFTP_FLAG_FSYNC_OPENSSH				2
+
 struct context_interface_s {
     void				*ptr;
     void				*data;
@@ -109,6 +112,9 @@ struct context_interface_s {
     unsigned int			(* get_interface_info)(struct context_interface_s *interface, const char *what, void *data, struct common_buffer_s *buffer);
     union {
 	struct sftp_ops_s {
+	    unsigned int			flags;
+	    unsigned char			mapped_statfs;
+	    unsigned char			mapped_fsync;
 	    int					(* complete_path)(struct context_interface_s *interface, char *buffer, struct pathinfo_s *pathinfo);
 	    unsigned int			(* get_complete_pathlen)(struct context_interface_s *interface, unsigned int len);
 	    struct prefix_s {
@@ -116,7 +122,6 @@ struct context_interface_s {
 		char				*path;
 		unsigned int			len;
 	    } prefix;
-	    unsigned int			flags;
 	} sftp;
 	void					*data;
     } backend;
