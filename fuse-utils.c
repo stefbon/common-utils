@@ -77,7 +77,6 @@ typedef struct entry_s *(*insert_entry_batch_cb)(struct directory_s *directory, 
 
 static struct entry_s *find_entry_dummy(struct entry_s *parent, struct name_s *xname, unsigned int *error)
 {
-    logoutput("find_entry_dummy: ino %li name %.*s", parent->inode->st.st_ino, xname->len, xname->name);
     *error=ENOENT;
     return NULL;
 }
@@ -97,8 +96,6 @@ static struct entry_s *insert_entry_dummy(struct directory_s *directory, struct 
 static void get_inode_link_dummy(struct directory_s *directory, struct inode_s *inode, struct inode_link_s **link)
 {
     unsigned int error=0;
-
-    logoutput("get_inode_link_dummy");
 
     *link=&dummy_directory.link;
     directory=(* directory->dops->create_directory)(inode, &error);
@@ -174,7 +171,6 @@ static struct dops_s dummy_dops = {
 static struct entry_s *find_entry_common(struct entry_s *parent, struct name_s *xname, unsigned int *error)
 {
     struct directory_s *directory=get_directory(parent->inode);
-    logoutput("find_entry_common: ino %li name %.*s", parent->inode->st.st_ino, xname->len, xname->name);
     unsigned int row=0;
     return (struct entry_s *) find_sl(&directory->skiplist, (void *) xname, &row, error);
 }
@@ -200,7 +196,6 @@ static struct entry_s *insert_entry_common(struct directory_s *directory, struct
 static struct entry_s *find_entry_batch_common(struct directory_s *directory, struct name_s *xname, unsigned int *error)
 {
     unsigned int row=0;
-    logoutput("find_entry_batch_common: ino %li name %.*s", directory->inode->st.st_ino, xname->len, xname->name);
     return (struct entry_s *) find_sl_batch(&directory->skiplist, (void *) xname, &row, error);
 }
 
@@ -221,18 +216,17 @@ static struct entry_s *insert_entry_batch_common(struct directory_s *directory, 
 
 static void get_inode_link_common(struct directory_s *directory, struct inode_s *inode, struct inode_link_s **link)
 {
-    logoutput("get_inode_link_common");
     *link=&directory->link;
 }
 
 static struct directory_s *remove_directory_common(struct inode_s *inode, unsigned int *error)
 {
     struct directory_s *directory=get_directory(inode);
-
     directory->flags|=_DIRECTORY_FLAG_REMOVE;
     directory->dops=&removed_dops;
-    directory->inode=NULL;
     _remove_directory_hashtable(directory);
+    directory->inode=NULL;
+    set_directory_dump(inode, get_dummy_directory());
     return directory;
 }
 
@@ -325,7 +319,6 @@ static struct dops_s removed_dops = {
 struct entry_s *find_entry(struct entry_s *parent, struct name_s *xname, unsigned int *error)
 {
     struct directory_s *directory=get_directory_dump(parent->inode);
-    logoutput("find_entry: ino %li name %.*s", parent->inode->st.st_ino, xname->len, xname->name);
     return (* directory->dops->find_entry)(parent, xname, error);
 }
 
@@ -344,17 +337,6 @@ struct entry_s *insert_entry(struct directory_s *directory, struct entry_s *entr
 
 struct entry_s *find_entry_batch(struct directory_s *directory, struct name_s *xname, unsigned int *error)
 {
-    logoutput("find_entry_batch: look for %.*s", xname->len, xname->name);
-    if (directory==get_dummy_directory()) {
-
-	logoutput("find_entry_batch: dummy directory");
-
-    } else {
-
-	logoutput("find_entry_batch: dops %s", (directory->dops) ? "defined" : "not defined");
-
-    }
-
     return (* directory->dops->find_entry_batch)(directory, xname, error);
 }
 
@@ -370,7 +352,10 @@ struct entry_s *insert_entry_batch(struct directory_s *directory, struct entry_s
 
 struct directory_s *remove_directory(struct inode_s *inode, unsigned int *error)
 {
-    struct directory_s *directory=get_directory(inode);
+    struct directory_s *directory=NULL;
+
+    directory=get_directory(inode);
+
     return (* directory->dops->remove_directory)(inode, error);
 }
 
@@ -463,7 +448,7 @@ static void _cb_created_default(struct entry_s *entry, struct create_entry_s *ce
     struct inode_s *inode=entry->inode;
     struct entry_s *parent=entry->parent;
 
-    logoutput("_cb_created_default: name %s", entry->name.name);
+    // logoutput("_cb_created_default: name %s", entry->name.name);
 
     inode->nlookup=1;
     inode->st.st_nlink=1;
@@ -684,24 +669,32 @@ static void _clear_directory(struct context_interface_s *i, struct directory_s *
 
     while (entry) {
 
+	logoutput("_clear_directory: found %.*s", entry->name.len, entry->name.name);
 	inode=entry->inode;
 	next=entry->name_next;
 
 	if (inode) {
-	    struct service_context_s *context=get_service_context(i);
+
+	    logoutput("_clear_directory: A");
 
 	    (* inode->fs->forget)(inode);
+
+	    logoutput("_clear_directory: B");
 
 	    if (S_ISDIR(inode->st.st_mode)) {
 		unsigned int error=0;
 		struct directory_s *subdir1=get_directory(inode);
 		struct directory_s *subdir2=NULL;
 
+		logoutput("_clear_directory: C");
+
 		subdir2=(subdir1) ? (* subdir1->dops->remove_directory)(inode, &error) : NULL;
 
 		if (subdir2) {
 		    struct name_s *xname=&entry->name;
 		    unsigned int keep=len;
+
+		    logoutput("_clear_directory: D");
 
 		    path[len]='/';
 		    len++;
@@ -710,6 +703,8 @@ static void _clear_directory(struct context_interface_s *i, struct directory_s *
 		    path[len]='\0';
 		    len++;
 
+		    logoutput("_clear_directory: E");
+
 		    /* do directory recursive */
 
 		    free_pathcache(&subdir2->pathcalls);
@@ -717,6 +712,8 @@ static void _clear_directory(struct context_interface_s *i, struct directory_s *
 		    destroy_directory(subdir2);
 		    len=keep;
 		    memset(&path[len], 0, sizeof(path) - len);
+
+		    logoutput("_clear_directory: F");
 
 		}
 

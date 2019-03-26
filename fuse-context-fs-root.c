@@ -71,32 +71,26 @@ static pthread_mutex_t done_mutex=PTHREAD_MUTEX_INITIALIZER;
 
 static void service_fs_forget(struct inode_s *inode)
 {
+    struct inode_link_s *link=NULL;
 
-    if (fs_lock_datalink(inode)==0) {
-	struct inode_link_s *link=NULL;
+    fs_get_inode_link(inode, &link);
 
-	fs_get_inode_link(inode, &link);
+    if (link->type==INODE_LINK_TYPE_CONTEXT) { /* must be true */
+	struct service_context_s *context=(struct service_context_s *) link->link.ptr;
+	struct workspace_mount_s *workspace=context->workspace;
+	struct fuse_user_s *user=workspace->user;
 
-	if (link->type==INODE_LINK_TYPE_CONTEXT) { /* must be true */
-	    struct service_context_s *context=(struct service_context_s *) link->link.ptr;
-	    struct workspace_mount_s *workspace=context->workspace;
-	    struct fuse_user_s *user=workspace->user;
+	logoutput("FORGET context %s", context->name);
 
-	    logoutput("FORGET context %s", context->name);
+	(* context->interface.signal_interface)(&context->interface, "disconnect");
+	(* context->interface.signal_interface)(&context->interface, "close");
+	(* context->interface.signal_interface)(&context->interface, "free");
+	remove_list_element(&context->list);
+	if (context->parent) context->parent->refcount--;
+	free_service_context(context);
 
-	    (* context->interface.signal_interface)(&context->interface, "disconnect");
-	    (* context->interface.signal_interface)(&context->interface, "close");
-	    (* context->interface.signal_interface)(&context->interface, "free");
-	    remove_list_element(&context->list);
-	    if (context->parent) context->parent->refcount--;
-	    free_service_context(context);
-
-	    link->type=0;
-	    link->link.ptr=NULL;
-
-	}
-
-	fs_unlock_datalink(inode);
+	link->type=0;
+	link->link.ptr=NULL;
 
     }
 
@@ -992,7 +986,7 @@ static void init_service_root_fs()
     fs->type.dir.releasedir=service_fs_releasedir;
     fs->type.dir.fsyncdir=service_fs_fsyncdir;
 
-    fs->type.dir.fsnotify=service_fs_fsnotify;
+    // fs->type.dir.fsnotify=service_fs_fsnotify;
 
     fs->statfs=service_fs_statfs;
 

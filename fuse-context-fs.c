@@ -612,10 +612,10 @@ static void service_fs_readlink(struct service_context_s *context, struct fuse_r
     unsigned int error=0;
     struct service_fs_s *fs=NULL;
 
-    logoutput("service_fs_readlink: pathlen %i)", pathlen);
+    logoutput("service_fs_readlink: pathlen %i", pathlen);
 
     init_fuse_path(&fpath, path, pathlen);
-    directory=get_directory(parent->inode);
+    directory=get_directory_dump(parent->inode);
 
     if (! directory) {
 
@@ -998,7 +998,7 @@ static void service_fs_removexattr(struct service_context_s *context, struct fus
 
 /* FSNOTIFY */
 
-static void service_fs_fsnotify(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, uint32_t mask)
+/*static void service_fs_fsnotify(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, uint32_t mask)
 {
     unsigned int error=0;
     struct entry_s *entry=inode->alias;
@@ -1032,7 +1032,7 @@ static void service_fs_fsnotify(struct service_context_s *context, struct fuse_r
     logoutput("FSNOTIFY %s (thread %i) %s mask %i", context->name, (int) gettid(), pathinfo.path, mask);
     (* fs->fsnotify)(context, request, &pathinfo, inode->st.st_ino, mask);
 
-}
+}*/
 
 /* STATFS */
 
@@ -1157,7 +1157,7 @@ static void init_service_fs()
     fs->type.dir.releasedir=service_fs_releasedir;
     fs->type.dir.fsyncdir=service_fs_fsyncdir;
 
-    fs->type.dir.fsnotify=service_fs_fsnotify;
+    // fs->type.dir.fsnotify=service_fs_fsnotify;
 
     fs->getxattr=service_fs_getxattr;
     fs->setxattr=service_fs_setxattr;

@@ -609,6 +609,14 @@ static void _remove_datahash(struct double_index_s *index, uint64_t unique)
 
 }
 
+static void close_fuse_interface(struct fuseparam_s *fuseparam)
+{
+    if (fuseparam->connection.io.fuse.xdata.fd>0) {
+	close(fuseparam->connection.io.fuse.xdata.fd);
+	fuseparam->connection.io.fuse.xdata.fd=0;
+    }
+}
+
 /*
     function to be done in a seperate thread
     here the data which is read from the VFS is 
@@ -838,6 +846,7 @@ static int read_fuse_event(int fd, void *ptr, uint32_t events)
     disconnect:
 
     (* fuseparam->interface->signal_context)(fuseparam->interface, "disconnect");
+    close_fuse_interface(fuseparam);
     return -1;
 
 }
@@ -964,13 +973,6 @@ struct timespec *get_fuse_interface_negative_timeout(void *ptr)
     return &fuseparam->negative_timeout;
 }
 
-static void close_fuse_interface(struct fuseparam_s *fuseparam)
-{
-    if (fuseparam->connection.io.fuse.xdata.fd>0) {
-	close(fuseparam->connection.io.fuse.xdata.fd);
-	fuseparam->connection.io.fuse.xdata.fd=0;
-    }
-}
 
 void signal_fuse_interface(struct context_interface_s *interface, const char *what)
 {

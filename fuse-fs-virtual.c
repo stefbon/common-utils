@@ -244,10 +244,10 @@ static void _fs_releasedir(struct fuse_opendir_s *opendir, struct fuse_request_s
     _fs_common_virtual_releasedir(opendir, request);
 }
 
-static void _fs_fsnotify(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, uint32_t mask)
-{
-    logoutput("_fs_fsnotify: watch on %li mask %i", (unsigned long) inode->st.st_ino, mask);
-}
+//static void _fs_fsnotify(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, uint32_t mask)
+//{
+//    logoutput("_fs_fsnotify: watch on %li mask %i", (unsigned long) inode->st.st_ino, mask);
+//}
 
 static void _fs_setxattr(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, const char *name, const char *value, size_t size, int flags)
 {
@@ -339,7 +339,7 @@ static void _set_virtual_fs(struct fuse_fs_s *fs)
 	fs->type.dir.releasedir=_fs_releasedir;
 	fs->type.dir.fsyncdir=_fs_fsyncdir;
 
-	fs->type.dir.fsnotify=_fs_fsnotify;
+	// fs->type.dir.fsnotify=_fs_fsnotify;
 
     } else {
 

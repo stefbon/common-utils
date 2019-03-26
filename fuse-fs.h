@@ -142,7 +142,7 @@ struct fuse_fs_s {
 	    void (*releasedir) (struct fuse_opendir_s *opendir, struct fuse_request_s *request);
 	    void (*fsyncdir) (struct fuse_opendir_s *opendir, struct fuse_request_s *request, unsigned char datasync);
 
-	    void (*fsnotify)(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, uint32_t mask);
+	    // void (*fsnotify)(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, uint32_t mask);
 
 	} dir;
 
@@ -205,7 +205,7 @@ void fuse_fs_statfs(struct fuse_request_s *request);
 void fuse_fs_interrupt(struct fuse_request_s *request);
 void fuse_fs_init (struct fuse_request_s *request);
 void fuse_fs_destroy (struct fuse_request_s *request);
-void fuse_fs_fsnotify(struct fuse_request_s *request);
+// void fuse_fs_fsnotify(struct fuse_request_s *request);
 
 void register_fuse_functions(struct context_interface_s *interface);
 

@@ -71,7 +71,9 @@ struct service_address_s {
 	    unsigned int				port;
 	} smbshare;
 	struct sftp_server_s {
-	    char					name[256];
+	    char					*name;	/* name to be used in context like name of shared directory */
+	    char					*prefix; /* prefix on remote server, may be empty */
+	    char					*uri; /* address of socket or port on remote server, may be empty */
 	} sftp;
 	struct nfs_export_s {
 	    char					*dir;

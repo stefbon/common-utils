@@ -77,26 +77,21 @@ struct special_path_s {
 
 static void _fs_special_forget(struct inode_s *inode)
 {
+    struct inode_link_s *link=NULL;
 
-    if (fs_lock_datalink(inode)==0) {
-	struct inode_link_s *link=NULL;
+    logoutput("_fs_special_forget");
 
-	fs_get_inode_link(inode, &link);
+    fs_get_inode_link(inode, &link);
 
-	if (link->type==INODE_LINK_TYPE_SPECIAL_ENTRY) {
-	    struct special_path_s *s=(struct special_path_s *) link->link.ptr;
+    if (link->type==INODE_LINK_TYPE_SPECIAL_ENTRY) {
+	struct special_path_s *s=(struct special_path_s *) link->link.ptr;
 
-	    if (s) free(s);
-
-	}
-
-	link->type=0;
-	link->link.ptr=NULL;
-
-	fs_unlock_datalink(inode);
-
+	if (s) free(s);
 
     }
+
+    link->type=0;
+    link->link.ptr=NULL;
 
 }
 
