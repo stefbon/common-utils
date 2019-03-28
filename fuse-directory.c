@@ -478,26 +478,6 @@ void set_directory_dump(struct inode_s *inode, struct directory_s *d)
     inode->link.link.ptr=(void *) d;
 }
 
-struct directory_s *get_directory(struct inode_s *inode)
-{
-    struct inode_link_s *link=NULL;
-    fs_get_inode_link(inode, &link);
-    return get_directory_dump(inode);
-}
-
-int get_inode_link_directory(struct inode_s *inode, struct inode_link_s *link)
-{
-    struct directory_s *directory=get_directory(inode);
-    memcpy(link, &directory->link, sizeof(struct inode_link_s));
-    return 0;
-}
-
-void set_inode_link_directory(struct inode_s *inode, struct inode_link_s *link)
-{
-    struct directory_s *directory=get_directory(inode);
-    memcpy(&directory->link, link, sizeof(struct inode_link_s));
-}
-
 static void _add_directory_hashtable(struct directory_s *directory)
 {
     unsigned int hashvalue = directory->inode->st.st_ino % 2048;

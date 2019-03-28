@@ -74,12 +74,10 @@ unsigned int get_pathmax(struct workspace_mount_s *w)
 
 void clear_workspace_mount(struct workspace_mount_s *workspace)
 {
-    struct directory_s *directory=get_directory(&workspace->rootinode);
     unsigned int error=0;
+    struct directory_s *directory=remove_directory(&workspace->rootinode, &error);
 
     logoutput("clear_workspace_mount: mountpoint %s", workspace->mountpoint.path);
-
-    directory=(* directory->dops->remove_directory)(&workspace->rootinode, &error);
 
     if (directory) {
 	struct service_context_s *context=workspace->context;

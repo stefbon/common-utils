@@ -61,11 +61,15 @@ struct entry_s *find_entry_batch(struct directory_s *directory, struct name_s *x
 void remove_entry_batch(struct directory_s *directory, struct entry_s *entry, unsigned int *error);
 struct entry_s *insert_entry_batch(struct directory_s *directory, struct entry_s *entry, unsigned int *error, unsigned short flags);
 
-struct directory_s *_remove_directory(struct inode_s *inode, unsigned int *error);
+struct directory_s *get_directory(struct inode_s *inode, unsigned int *error);
 struct directory_s *remove_directory(struct inode_s *inode, unsigned int *error);
 
 void init_directory_calls();
 struct directory_s *get_dummy_directory();
+
+int get_inode_link_directory(struct inode_s *inode, struct inode_link_s *link);
+void set_inode_link_directory(struct inode_s *inode, struct inode_link_s *link);
+
 struct pathcalls_s *get_pathcalls(struct directory_s *d);
 
 void init_create_entry(struct create_entry_s *ce, struct name_s *n, struct entry_s *p, struct directory_s *d, struct fuse_opendir_s *fo, struct service_context_s *c, struct stat *st, void *ptr);

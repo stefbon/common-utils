@@ -272,7 +272,7 @@ void create_desktopentry_file(char *path, struct entry_s *parent, struct workspa
     if (lstat(path, &st)==0 && S_ISREG(st.st_mode)) {
 	struct name_s xname;
 	unsigned int error=0;
-	struct directory_s *directory=get_directory(parent->inode);
+	struct directory_s *directory=get_directory(parent->inode, &error);
 
 	xname.name=desktopentryname;
 	xname.len=strlen(xname.name);

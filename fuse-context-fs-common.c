@@ -204,7 +204,8 @@ void service_fs_fsyncdir(struct fuse_opendir_s *opendir, struct fuse_request_s *
 
 void service_fs_releasedir(struct fuse_opendir_s *opendir, struct fuse_request_s *request)
 {
-    struct directory_s *directory=get_directory(opendir->inode);
+    unsigned int error=0;
+    struct directory_s *directory=get_directory(opendir->inode, &error);
     struct service_fs_s *fs=opendir->context->service.filesystem.fs;
 
     logoutput("RELEASEDIR %s (thread %i)", opendir->context->name, (int) gettid());

@@ -388,7 +388,7 @@ void _fs_common_virtual_opendir(struct fuse_opendir_s *opendir, struct fuse_requ
     struct fuse_open_out open_out;
 
     logoutput("_fs_common_virtual_opendir: ino %li", opendir->inode->st.st_ino);
-    directory=get_directory(opendir->inode);
+    directory=get_directory(opendir->inode, &error);
 
     if (directory && directory->count>0) opendir->mode |= _FUSE_READDIR_MODE_NONEMPTY;
     open_out.fh=(uint64_t) opendir;
@@ -422,7 +422,7 @@ void _fs_common_virtual_readdir(struct fuse_opendir_s *opendir, struct fuse_requ
     }
 
     logoutput("_fs_common_virtual_readdir");
-    directory=get_directory(opendir->inode);
+    directory=get_directory(opendir->inode, &error);
 
     if (rlock_directory(directory, &rlock)==-1) {
 
@@ -547,7 +547,7 @@ void _fs_common_virtual_readdirplus(struct fuse_opendir_s *opendir, struct fuse_
     }
 
     logoutput("_fs_common_virtual_readdirplus");
-    directory=get_directory(opendir->inode);
+    directory=get_directory(opendir->inode, &error);
 
     if (rlock_directory(directory, &rlock)==-1) {
 
@@ -725,7 +725,8 @@ int symlink_generic_validate(struct service_context_s *context, char *target)
     if (len>mountpoint->len) {
 
 	if (strncmp(target, mountpoint->path, mountpoint->len)==0 && target[mountpoint->len]=='/') {
-	    struct directory_s *directory=get_directory(context->service.filesystem.inode);
+	    unsigned int error=0;
+	    struct directory_s *directory=get_directory(context->service.filesystem.inode, &error);
 
 	    if (directory) {
 		char *pos=&target[mountpoint->len];

@@ -43,7 +43,7 @@ struct dops_s {
     struct entry_s 			*(*find_entry)(struct entry_s *parent, struct name_s *xname, unsigned int *error);
     void 				(*remove_entry)(struct entry_s *entry, unsigned int *error);
     struct entry_s 			*(*insert_entry)(struct directory_s *directory, struct entry_s *entry, unsigned int *error, unsigned short flags);
-    struct directory_s			*(*create_directory)(struct inode_s *inode, unsigned int *error);
+    struct directory_s			*(*get_directory)(struct inode_s *inode, unsigned int *error);
     struct directory_s			*(*remove_directory)(struct inode_s *inode, unsigned int *error);
     struct entry_s 			*(*find_entry_batch)(struct directory_s *directory, struct name_s *xname, unsigned int *error);
     void 				(*remove_entry_batch)(struct directory_s *directory, struct entry_s *entry, unsigned int *error);
@@ -75,11 +75,6 @@ struct directory_s *search_directory(struct inode_s *inode);
 
 struct directory_s *get_directory_dump(struct inode_s *inode);
 void set_directory_dump(struct inode_s *inode, struct directory_s *d);
-
-struct directory_s *get_directory(struct inode_s *inode);
-
-int get_inode_link_directory(struct inode_s *inode, struct inode_link_s *link);
-void set_inode_link_directory(struct inode_s *inode, struct inode_link_s *link);
 
 //void _add_directory_hashtable(struct directory_s *directory);
 void _remove_directory_hashtable(struct directory_s *directory);

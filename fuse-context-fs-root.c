@@ -275,7 +275,7 @@ static void service_fs_mkdir(struct service_context_s *context, struct fuse_requ
     memcpy(&st.st_ctim, &st.st_atim, sizeof(struct timespec));
 
     calculate_nameindex(&xname);
-    directory=get_directory(pinode);
+    directory=get_directory(pinode, &error);
     entry=_fs_common_create_entry_unlocked(context->workspace, directory, &xname, &st, 0, 0, &error);
 
     /* entry created local and no error (no EEXIST!) */
@@ -368,7 +368,7 @@ static void service_fs_mknod(struct service_context_s *context, struct fuse_requ
     memcpy(&st.st_ctim, &st.st_atim, sizeof(struct timespec));
 
     calculate_nameindex(&xname);
-    directory=get_directory(pinode);
+    directory=get_directory(pinode, &error);
     entry=_fs_common_create_entry_unlocked(context->workspace, directory, &xname, &st, 0, 0, &error);
 
     /* entry created local and no error (no EEXIST!) */
@@ -441,7 +441,7 @@ static void service_fs_symlink(struct service_context_s *context, struct fuse_re
     memcpy(&st.st_ctim, &st.st_atim, sizeof(struct timespec));
 
     calculate_nameindex(&xname);
-    directory=get_directory(pinode);
+    directory=get_directory(pinode, &error);
     entry=_fs_common_create_entry_unlocked(context->workspace, directory, &xname, &st, 0, 0, &error);
 
     /* entry created local and no error (no EEXIST!) */
@@ -573,7 +573,7 @@ static void service_fs_rmdir(struct service_context_s *context, struct fuse_requ
 	char *pathstart=NULL;
 	union datalink_u *link=NULL;
 
-	sub_directory=get_directory(entry->inode);
+	sub_directory=get_directory(entry->inode, &error);
 
 	if (sub_directory && sub_directory->count>0) {
 
@@ -687,12 +687,12 @@ static void service_fs_rename_keep(struct service_context_s *context, struct fus
 
 	    if (S_ISDIR(n_entry->inode->st.st_mode)) {
 
-		directory=get_directory(n_entry->inode);
+		directory=get_directory(n_entry->inode, &error);
 
 	    } else {
 
 		pathinfo.len=add_name_path(&fpath, &n_entry->name);
-		directory=get_directory(n_entry->parent->inode);
+		directory=get_directory(n_entry->parent->inode, &error);
 
 	    }
 
@@ -788,7 +788,7 @@ static void service_fs_create(struct fuse_openfile_s *openfile, struct fuse_requ
     memcpy(&st.st_ctim, &st.st_atim, sizeof(struct timespec));
 
     calculate_nameindex(&xname);
-    directory=get_directory(openfile->inode); /* at this moment this is the parent, the entry has to be created */
+    directory=get_directory(openfile->inode, &error); /* at this moment this is the parent, the entry has to be created */
     entry=_fs_common_create_entry_unlocked(context->workspace, directory, &xname, &st, 0, 0, &error);
 
     /* entry created local and no error (no EEXIST!) */

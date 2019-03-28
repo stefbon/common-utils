@@ -470,13 +470,13 @@ static void inode_2delete_thread(void *ptr)
 	    }
 
 	    if (parent) {
+		unsigned int error=0;
 		struct simple_lock_s wlock;
-		struct directory_s *directory=get_directory(parent->inode);
+		struct directory_s *directory=get_directory(parent->inode, &error);
 
 		/* remove entry from directory */
 
 		if (wlock_directory(directory, &wlock)==0) {
-		    unsigned int error=0;
 
 		    remove_entry_batch(directory, entry, &error);
 		    unlock_directory(directory, &wlock);
