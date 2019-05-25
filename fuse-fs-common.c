@@ -278,14 +278,16 @@ void _fs_common_virtual_lookup(struct service_context_s *context, struct fuse_re
     struct entry_s *parent=pinode->alias, *entry=NULL;
     struct name_s xname={NULL, 0, 0};
     unsigned int error=0;
+    struct directory_s *directory=NULL;
 
     logoutput("_fs_common_virtual_lookup: name %.*s parent %li (thread %i)", len, name, (long) pinode->st.st_ino, (int) gettid());
 
     xname.name=(char *)name;
     xname.len=strlen(name);
     calculate_nameindex(&xname);
+    directory=get_directory(pinode, &error);
 
-    entry=find_entry(parent, &xname, &error);
+    entry=find_entry(directory, &xname, &error);
 
     if (entry) {
 	struct inode_s *inode=entry->inode;

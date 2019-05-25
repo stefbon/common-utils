@@ -121,7 +121,7 @@ static void service_fs_lookup(struct service_context_s *context, struct fuse_req
     pathinfo.path=fpath.pathstart;
 
     calculate_nameindex(&xname);
-    entry=find_entry(pinode->alias, &xname, &error);
+    entry=find_entry(directory, &xname, &error);
     context=fpath.context;
 
     logoutput("LOOKUP %s (thread %i) %s", context->name, (int) gettid(), pathinfo.path);
@@ -492,28 +492,30 @@ static void service_fs_unlink(struct service_context_s *context, struct fuse_req
     unsigned int error=0;
     struct name_s xname={(char *)name, len, 0};
     struct entry_s *entry=NULL;
+    struct directory_s *directory=NULL;
+
+    directory=get_directory(pinode, &error);
+
+    if (! directory) {
+
+	reply_VFS_error(request, ENOMEM);
+	return;
+
+    }
 
     calculate_nameindex(&xname);
-    entry=find_entry(pinode->alias, &xname, &error);
+    entry=find_entry(directory, &xname, &error);
 
     if (entry) {
 	struct pathcalls_s *pathcalls=NULL;
 	struct pathinfo_s pathinfo=PATHINFO_INIT;
 	unsigned int pathlen=get_pathmax(context->workspace) + xname.len + 1;
 	char path[pathlen + 1];
-	struct directory_s *directory=NULL;
 	struct fuse_path_s fpath;
 	struct service_fs_s *fs=NULL;
 
 	init_fuse_path(&fpath, path, pathlen);
-	directory=get_directory(pinode, &error);
 
-	if (! directory) {
-
-	    reply_VFS_error(request, ENOMEM);
-	    return;
-
-	}
 
 	pathinfo.len=add_name_path(&fpath, &xname);
 
@@ -545,31 +547,33 @@ static void service_fs_rmdir(struct service_context_s *context, struct fuse_requ
     unsigned int error=0;
     struct name_s xname={(char *)name, len, 0};
     struct entry_s *entry=NULL;
+    struct directory_s *directory=NULL;
+
+    directory=get_directory(pinode, &error);
+
+    if (! directory) {
+
+	reply_VFS_error(request, ENOMEM);
+	return;
+
+    } else if (directory->count>0) {
+
+	reply_VFS_error(request, ENOTEMPTY);
+	return;
+
+    }
 
     calculate_nameindex(&xname);
-    entry=find_entry(pinode->alias, &xname, &error);
+    entry=find_entry(directory, &xname, &error);
 
     if (entry) {
 	struct pathcalls_s *pathcalls=NULL;
 	struct pathinfo_s pathinfo=PATHINFO_INIT;
 	unsigned int pathlen=get_pathmax(context->workspace) + xname.len + 1;
 	char path[pathlen + 1];
-	struct directory_s *directory=NULL;
 	struct fuse_path_s fpath;
 	struct service_fs_s *fs=NULL;
 
-	/* check it's empty */
-
-	directory=get_directory_dump(entry->inode);
-
-	if (directory && directory->count>0) {
-
-	    reply_VFS_error(request, ENOTEMPTY);
-	    return;
-
-	}
-
-	directory=get_directory(pinode, &error);
 	init_fuse_path(&fpath, path, pathlen);
 
 	pathcalls=get_pathcalls(directory);

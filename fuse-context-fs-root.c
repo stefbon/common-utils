@@ -114,6 +114,7 @@ static void service_fs_lookup(struct service_context_s *context, struct fuse_req
     char path[pathlen + 1];
     char *pathstart=NULL;
     struct pathinfo_s pathinfo=PATHINFO_INIT;
+    struct directory_s *directory=NULL;
 
     pathstart=path+pathlen;
     *pathstart='\0';
@@ -124,11 +125,13 @@ static void service_fs_lookup(struct service_context_s *context, struct fuse_req
     *pathstart='/';
     pathinfo.len=xname.len + 1;
 
+    directory=get_directory(pinode, &error);
+
     context=get_context_root_inode(pinode);
     pathinfo.path=pathstart;
     calculate_nameindex(&xname);
 
-    entry=find_entry(pinode->alias, &xname, &error);
+    entry=find_entry(directory, &xname, &error);
 
     if (entry) {
 
@@ -309,16 +312,12 @@ static void service_fs_mkdir(struct service_context_s *context, struct fuse_requ
 	}
 
 	error=EIO;
+	remove_entry(directory, entry, &error);
+	destroy_entry(entry);
 
     }
 
     reply_VFS_error(request, error);
-    if (entry) {
-
-	remove_entry(entry, &error);
-	destroy_entry(entry);
-
-    }
 
 }
 
@@ -403,17 +402,14 @@ static void service_fs_mknod(struct service_context_s *context, struct fuse_requ
 
 	}
 
+	remove_entry(directory, entry, &error);
+	destroy_entry(entry);
+
 	error=EIO;
 
     }
 
     reply_VFS_error(request, error);
-    if (entry) {
-
-	remove_entry(entry, &error);
-	destroy_entry(entry);
-
-    }
 
 }
 
@@ -469,6 +465,7 @@ static void service_fs_symlink(struct service_context_s *context, struct fuse_re
 
 	if (context) {
 	    struct service_fs_s *fs=context->service.filesystem.fs;
+	    struct inode_s *inode=entry->inode;
 
 	    logoutput("service_fs_symlink: context root %s (thread %i) %s to %s", context->name, (int) gettid(), pathstart, target);
 
@@ -478,29 +475,19 @@ static void service_fs_symlink(struct service_context_s *context, struct fuse_re
 		free(remote_target);
 		return;
 
-	    } else {
-
-		reply_VFS_error(request, EPERM);
-		if (entry) {
-		    struct inode_s *inode=entry->inode;
-
-		    queue_inode_2forget(context->unique, inode->st.st_ino, 0, 0);
-
-		}
-
 	    }
 
+	    error=EPERM;
+	    queue_inode_2forget(context->unique, inode->st.st_ino, 0, 0);
+
 	}
+
+	remove_entry(directory, entry, &error);
+	destroy_entry(entry);
 
     }
 
     reply_VFS_error(request, error);
-    if (entry) {
-
-	remove_entry(entry, &error);
-	destroy_entry(entry);
-
-    }
 
 }
 
@@ -512,9 +499,11 @@ static void service_fs_unlink(struct service_context_s *context, struct fuse_req
     unsigned int error=ENOENT;
     struct name_s xname={(char *)name, len, 0};
     struct entry_s *entry=NULL;
+    struct directory_s *directory=NULL;
 
     calculate_nameindex(&xname);
-    entry=find_entry(pinode->alias, &xname, &error);
+    directory=get_directory(pinode, &error);
+    entry=find_entry(directory, &xname, &error);
 
     if (entry) {
 	struct pathcalls_s *pathcalls=NULL;
@@ -560,9 +549,11 @@ static void service_fs_rmdir(struct service_context_s *context, struct fuse_requ
     unsigned int error=ENOENT;
     struct name_s xname={(char *)name, len, 0};
     struct entry_s *entry=NULL;
+    struct directory_s *directory=NULL;
 
     calculate_nameindex(&xname);
-    entry=find_entry(pinode->alias, &xname, &error);
+    directory=get_directory(pinode, &error);
+    entry=find_entry(directory, &xname, &error);
 
     if (entry) {
 	struct pathcalls_s *pathcalls=NULL;
@@ -627,6 +618,7 @@ static void service_fs_rename_keep(struct service_context_s *context, struct fus
     unsigned int error=ENOENT;
     struct name_s xname={(char *)name, strlen(name), 0};
     struct entry_s *entry=NULL;
+    struct directory_s *directory=NULL;
 
     if (flags & RENAME_WHITEOUT) {
 
@@ -636,14 +628,15 @@ static void service_fs_rename_keep(struct service_context_s *context, struct fus
     }
 
     calculate_nameindex(&xname);
-    entry=find_entry(inode->alias, &xname, &error);
+    directory=get_directory(inode, &error);
+    entry=find_entry(directory, &xname, &error);
 
     if (entry) {
 	struct pathcalls_s *pathcalls=NULL;
 	struct pathinfo_s pathinfo=PATHINFO_INIT;
 	unsigned int pathlen=xname.len + 1;
 	char path[pathlen + 1];
-	struct directory_s *sub_directory=NULL;
+	struct directory_s *sub_directory=NULL, *n_directory=NULL;
 	char *pathstart=NULL;
 	struct name_s n_xname={(char *)n_name, strlen(n_name), 0};
 	struct entry_s *n_entry=NULL;
@@ -662,7 +655,8 @@ static void service_fs_rename_keep(struct service_context_s *context, struct fus
 	pathinfo.path=pathstart;
 
 	calculate_nameindex(&n_xname);
-	n_entry=find_entry(n_inode->alias, &n_xname, &error);
+	n_directory=get_directory(n_inode, &error);
+	n_entry=find_entry(n_directory, &n_xname, &error);
 
 	if (n_entry && (flags & RENAME_NOREPLACE)) {
 
@@ -675,7 +669,6 @@ static void service_fs_rename_keep(struct service_context_s *context, struct fus
 	    return;
 
 	} else {
-	    struct directory_s *directory=NULL;
 	    struct pathcalls_s *pathcalls=NULL;
 	    unsigned int n_pathlen=get_pathmax(context->workspace);
 	    char n_path[n_pathlen + 1];

@@ -70,23 +70,6 @@ typedef struct entry_s *(*insert_entry_batch_cb)(struct directory_s *directory, 
 
 /* DUMMY DIRECTORY OPS */
 
-static struct entry_s *find_entry_dummy(struct entry_s *parent, struct name_s *xname, unsigned int *error)
-{
-    *error=ENOENT;
-    return NULL;
-}
-
-static void remove_entry_dummy(struct entry_s *entry, unsigned int *error)
-{
-    *error=EINVAL;
-}
-
-static struct entry_s *insert_entry_dummy(struct directory_s *directory, struct entry_s *entry, unsigned int *error, unsigned short flags)
-{
-    *error=EINVAL;
-    return NULL;
-}
-
 static void _init_directory(struct directory_s *directory)
 {
     directory->dops=&default_dops;
@@ -116,72 +99,12 @@ struct directory_s *remove_directory_dummy(struct inode_s *inode, unsigned int *
     return NULL;
 }
 
-static struct entry_s *find_entry_batch_dummy(struct directory_s *directory, struct name_s *xname, unsigned int *error)
-{
-    *error=ENOENT;
-    return NULL;
-}
-
-void remove_entry_batch_dummy(struct directory_s *directory, struct entry_s *entry, unsigned int *error)
-{
-    *error=EINVAL;
-}
-
-static struct entry_s *insert_entry_batch_dummy(struct directory_s *directory, struct entry_s *entry, unsigned int *error, unsigned short flags)
-{
-    *error=EINVAL;
-    return NULL;
-}
-
-static void get_inode_link_dummy(struct directory_s *directory, struct inode_s *inode, struct inode_link_s **link)
-{
-    *link=NULL;
-}
-
-static struct pathcalls_s *get_pathcalls_dummy(struct directory_s *d)
-{
-    return NULL;
-}
-
 static struct dops_s dummy_dops = {
-    .find_entry			= find_entry_dummy,
-    .remove_entry		= remove_entry_dummy,
-    .insert_entry		= insert_entry_dummy,
     .get_directory		= get_directory_dummy,
     .remove_directory		= remove_directory_dummy,
-    .find_entry_batch		= find_entry_batch_dummy,
-    .remove_entry_batch		= remove_entry_batch_dummy,
-    .insert_entry_batch		= insert_entry_batch_dummy,
-    .get_inode_link		= get_inode_link_dummy,
-    .get_pathcalls		= get_pathcalls_dummy
 };
 
-
 /* DEFAULT DIRECTORY OPS */
-
-static struct entry_s *find_entry_common(struct entry_s *parent, struct name_s *xname, unsigned int *error)
-{
-    struct directory_s *directory=(struct directory_s *) parent->inode->link.link.ptr;
-    unsigned int row=0;
-    return (struct entry_s *) find_sl(&directory->skiplist, (void *) xname, &row, error);
-}
-
-static void remove_entry_common(struct entry_s *entry, unsigned int *error)
-{
-    struct entry_s *parent=entry->parent;
-    struct directory_s *directory=(struct directory_s *) parent->inode->link.link.ptr;
-    struct name_s *lookupname=&entry->name;
-    unsigned int row=0;
-    delete_sl(&directory->skiplist, (void *) lookupname, &row, error);
-}
-
-static struct entry_s *insert_entry_common(struct directory_s *directory, struct entry_s *entry, unsigned int *error, unsigned short flags)
-{
-    struct name_s *lookupname=&entry->name;
-    unsigned int row=0;
-    unsigned short sl_flags=(flags & _ENTRY_FLAG_TEMP) ? _SL_INSERT_FLAG_NOLANE : 0;
-    return (struct entry_s *)insert_sl(&directory->skiplist, (void *) lookupname, &row, error, (void *) entry, sl_flags);
-}
 
 static struct directory_s *get_directory_common(struct inode_s *inode, unsigned int *error)
 {
@@ -199,69 +122,19 @@ static struct directory_s *remove_directory_common(struct inode_s *inode, unsign
     return directory;
 }
 
-static struct entry_s *find_entry_batch_common(struct directory_s *directory, struct name_s *xname, unsigned int *error)
-{
-    unsigned int row=0;
-    return (struct entry_s *) find_sl_batch(&directory->skiplist, (void *) xname, &row, error);
-}
-
-static void remove_entry_batch_common(struct directory_s *directory, struct entry_s *entry, unsigned int *error)
-{
-    struct name_s *lookupname=&entry->name;
-    unsigned int row=0;
-    delete_sl_batch(&directory->skiplist, (void *) lookupname, &row, error);
-}
-
-static struct entry_s *insert_entry_batch_common(struct directory_s *directory, struct entry_s *entry, unsigned int *error, unsigned short flags)
-{
-    struct name_s *lookupname=&entry->name;
-    unsigned int row=0;
-    unsigned short sl_flags=(flags & _ENTRY_FLAG_TEMP) ? _SL_INSERT_FLAG_NOLANE : 0;
-    return (struct entry_s *) insert_sl_batch(&directory->skiplist, (void *) lookupname, &row, error, (void *) entry, sl_flags);
-}
-
 static void get_inode_link_common(struct directory_s *directory, struct inode_s *inode, struct inode_link_s **link)
 {
     *link=&directory->link;
 }
 
-static struct pathcalls_s *get_pathcalls_common(struct directory_s *d)
-{
-    return &d->pathcalls;
-}
+
 
 static struct dops_s default_dops = {
-    .find_entry			= find_entry_common,
-    .remove_entry		= remove_entry_common,
-    .insert_entry		= insert_entry_common,
     .get_directory		= get_directory_common,
     .remove_directory		= remove_directory_common,
-    .find_entry_batch		= find_entry_batch_common,
-    .remove_entry_batch		= remove_entry_batch_common,
-    .insert_entry_batch		= insert_entry_batch_common,
-    .get_inode_link		= get_inode_link_common,
-    .get_pathcalls		= get_pathcalls_common,
 };
 
 /* REMOVED DIRECTORY OPS */
-
-static struct entry_s *find_entry_removed(struct entry_s *p, struct name_s *xname, unsigned int *error)
-{
-    *error=ENOTDIR;
-    return NULL;
-}
-
-static void remove_entry_removed(struct entry_s *e, unsigned int *error)
-{
-    *error=ENOTDIR;
-    return;
-}
-
-static struct entry_s *insert_entry_removed(struct directory_s *d, struct entry_s *e, unsigned int *error, unsigned short flags)
-{
-    *error=ENOTDIR;
-    return NULL;
-}
 
 static struct directory_s *get_directory_removed(struct inode_s *inode, unsigned int *error)
 {
@@ -274,61 +147,12 @@ static struct directory_s *remove_directory_removed(struct inode_s *inode, unsig
     return NULL;
 }
 
-static struct entry_s *find_entry_removed_batch(struct directory_s *d, struct name_s *xname, unsigned int *error)
-{
-    *error=ENOTDIR;
-    return NULL;
-}
-
-static void remove_entry_removed_batch(struct directory_s *d, struct entry_s *entry, unsigned int *error)
-{
-    *error=ENOTDIR;
-    return;
-}
-
-static struct entry_s *insert_entry_removed_batch(struct directory_s *d, struct entry_s *entry, unsigned int *error, unsigned short flags)
-{
-    *error=ENOTDIR;
-    return NULL;
-}
-
-static struct pathcalls_s *get_pathcalls_removed(struct directory_s *d)
-{
-    return NULL;
-}
-
 static struct dops_s removed_dops = {
-    .find_entry			= find_entry_removed,
-    .remove_entry		= remove_entry_removed,
-    .insert_entry		= insert_entry_removed,
     .get_directory		= get_directory_removed,
     .remove_directory		= remove_directory_removed,
-    .find_entry_batch		= find_entry_removed_batch,
-    .remove_entry_batch		= remove_entry_removed_batch,
-    .insert_entry_batch		= insert_entry_removed_batch,
-    .get_pathcalls		= get_pathcalls_removed,
 };
 
 /* simple functions which call the right function for the directory */
-
-struct entry_s *find_entry(struct entry_s *parent, struct name_s *xname, unsigned int *error)
-{
-    struct directory_s *directory=get_directory_dump(parent->inode);
-    return (* directory->dops->find_entry)(parent, xname, error);
-}
-
-void remove_entry(struct entry_s *entry, unsigned int *error)
-{
-    struct entry_s *parent=entry->parent;
-    struct directory_s *directory=get_directory_dump(parent->inode);
-    (* directory->dops->remove_entry)(entry, error);
-}
-
-struct entry_s *insert_entry(struct directory_s *directory, struct entry_s *entry, unsigned int *error, unsigned short flags)
-{
-    struct entry_s *parent=entry->parent;
-    return (* directory->dops->insert_entry)(directory, entry, error, flags);
-}
 
 struct directory_s *get_directory(struct inode_s *inode, unsigned int *error)
 {
@@ -368,25 +192,51 @@ struct directory_s *remove_directory(struct inode_s *inode, unsigned int *error)
 
 }
 
-struct entry_s *find_entry_batch(struct directory_s *directory, struct name_s *xname, unsigned int *error)
+struct entry_s *find_entry(struct directory_s *directory, struct name_s *lookupname, unsigned int *error)
 {
-    return (* directory->dops->find_entry_batch)(directory, xname, error);
+    unsigned int row=0;
+    return (struct entry_s *) find_sl(&directory->skiplist, (void *) lookupname, &row, error);
+}
+
+void remove_entry(struct directory_s *directory, struct entry_s *entry, unsigned int *error)
+{
+    struct name_s *lookupname=&entry->name;
+    unsigned int row=0;
+    delete_sl(&directory->skiplist, (void *) lookupname, &row, error);
+}
+
+struct entry_s *insert_entry(struct directory_s *directory, struct entry_s *entry, unsigned int *error, unsigned short flags)
+{
+    struct name_s *lookupname=&entry->name;
+    unsigned int row=0;
+    unsigned short sl_flags=(flags & _ENTRY_FLAG_TEMP) ? _SL_INSERT_FLAG_NOLANE : 0;
+    return (struct entry_s *)insert_sl(&directory->skiplist, (void *) lookupname, &row, error, (void *) entry, sl_flags);
+}
+
+struct entry_s *find_entry_batch(struct directory_s *directory, struct name_s *lookupname, unsigned int *error)
+{
+    unsigned int row=0;
+    return (struct entry_s *) find_sl_batch(&directory->skiplist, (void *) lookupname, &row, error);
 }
 
 void remove_entry_batch(struct directory_s *directory, struct entry_s *entry, unsigned int *error)
 {
-    (* directory->dops->remove_entry_batch)(directory, entry, error);
+    struct name_s *lookupname=&entry->name;
+    unsigned int row=0;
+    delete_sl_batch(&directory->skiplist, (void *) lookupname, &row, error);
 }
 
 struct entry_s *insert_entry_batch(struct directory_s *directory, struct entry_s *entry, unsigned int *error, unsigned short flags)
 {
-    return (* directory->dops->insert_entry_batch)(directory, entry, error, flags);
+    struct name_s *lookupname=&entry->name;
+    unsigned int row=0;
+    unsigned short sl_flags=(flags & _ENTRY_FLAG_TEMP) ? _SL_INSERT_FLAG_NOLANE : 0;
+    return (struct entry_s *) insert_sl_batch(&directory->skiplist, (void *) lookupname, &row, error, (void *) entry, sl_flags);
 }
-
 
 struct pathcalls_s *get_pathcalls(struct directory_s *d)
 {
-    return (* d->dops->get_pathcalls)(d);
+    return &d->pathcalls;
 }
 
 void init_directory_calls()

@@ -53,8 +53,8 @@ struct create_entry_s {
 
 /* prototypes */
 
-struct entry_s *find_entry(struct entry_s *parent, struct name_s *xname, unsigned int *error);
-void remove_entry(struct entry_s *entry, unsigned int *error);
+struct entry_s *find_entry(struct directory_s *directory, struct name_s *xname, unsigned int *error);
+void remove_entry(struct directory_s *directory, struct entry_s *entry, unsigned int *error);
 struct entry_s *insert_entry(struct directory_s *directory, struct entry_s *entry, unsigned int *error, unsigned short flags);
 
 struct entry_s *find_entry_batch(struct directory_s *directory, struct name_s *xname, unsigned int *error);
@@ -77,7 +77,6 @@ struct entry_s *create_entry_extended(struct create_entry_s *ce);
 struct entry_s *create_entry_extended_batch(struct create_entry_s *ce);
 
 void clear_directory(struct context_interface_s *i, struct directory_s *directory);
-
 struct entry_s *walk_fuse_fs(struct entry_s *parent, char *path);
 
 #endif

@@ -333,69 +333,6 @@ static void fanotify_free_fsevent(struct fsevent_s *fsevent)
     fsevent->backend.linuxfanotify.pathlen=0;
 }
 
-static int get_backup_event(struct entry_s *parent, struct fsevent_s *fsevent, struct name_s *xname)
-{
-    struct entry_s *entry=NULL;
-    char *slash=NULL;
-    unsigned int error=0;
-
-    entry=NULL;
-
-    xname->name=fsevent->backend.linuxfanotify.path;
-
-    while(1) {
-
-        /*  walk through path from begin to end and 
-            check every part */
-
-        slash=strchr(xname->name, '/');
-
-        if (slash==xname->name) {
-
-            xname->name++;
-            if (*xname->name=='\0') break;
-            continue;
-
-        }
-
-        if (slash) *slash='\0';
-
-	xname->len=strlen(xname->name);
-	calculate_nameindex(xname);
-
-	error=0;
-        entry=find_entry(parent, xname, &error);
-
-	if (slash) {
-
-	    *slash='/';
-
-	    if (! entry) break;
-
-	    parent=entry;
-	    xname->name=slash+1;
-
-	    break;
-
-	}
-
-    }
-
-    free:
-
-    free(fsevent->backend.linuxfanotify.path);
-    fsevent->backend.linuxfanotify.path=NULL;
-    fsevent->backend.linuxfanotify.pathlen=0;
-
-    xname->name=NULL;
-    xname->len=0;
-    xname->index=0;
-
-    return -1;
-
-}
-
-
 static int fanotify_complete_fsevent(struct fsevent_s *fsevent, unsigned int *mask, struct name_s *xname)
 {
     struct fanotify_fsevent_s *fa=NULL;
@@ -414,10 +351,6 @@ static int fanotify_complete_fsevent(struct fsevent_s *fsevent, unsigned int *ma
     if (fa) {
 
 	return (* fa->complete)(fa, fsevent, xname);
-
-    } else {
-
-	return get_backup_event(backup_workspace.rootinode.alias, fsevent, xname);
 
     }
 
