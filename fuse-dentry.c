@@ -393,6 +393,13 @@ struct inode_s *realloc_inode(struct inode_s *inode, unsigned int new)
 
 	}
 
+	if (inode->alias) {
+
+	    struct entry_s *entry=inode->alias;
+	    entry->inode=inode;
+
+	}
+
     }
 
     inode->cache_size=new;

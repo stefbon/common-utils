@@ -89,7 +89,8 @@ static void _fs_get_inode_link_dir(struct inode_s *inode, struct inode_link_s **
 
     pthread_mutex_lock(&datalink_mutex);
     directory=(struct directory_s *) inode->link.link.ptr;
-    (* directory->dops->get_inode_link)(directory, inode, link);
+    // (* directory->dops->get_inode_link)(directory, inode, link);
+    *link=&directory->link;
     pthread_mutex_unlock(&datalink_mutex);
 }
 
