@@ -31,8 +31,12 @@
 #define SIMPLE_LOCK_FLAG_WAITING	2
 #define SIMPLE_LOCK_FLAG_EFFECTIVE	4
 #define SIMPLE_LOCK_FLAG_ALLOCATED	8
+#define SIMPLE_LOCK_FLAG_UPGRADED	16
+
+#define SIMPLE_LOCKING_FLAG_UPGRADE	1
 
 struct simple_locking_s {
+    unsigned int			flags;
     pthread_mutex_t			mutex;
     pthread_cond_t			cond;
     struct list_header_s		readlocks;

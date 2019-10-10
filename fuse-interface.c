@@ -535,6 +535,7 @@ unsigned char signal_request_error(void *ptr, uint64_t unique, unsigned int erro
 }
 static void signal_fuse_interface_common(struct fuseparam_s *fuseparam, unsigned char status)
 {
+    if (fuseparam==NULL) return;
     pthread_mutex_lock(&fuseparam->mutex);
     fuseparam->status |= status;
     pthread_cond_broadcast(&fuseparam->cond);

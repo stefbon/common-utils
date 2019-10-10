@@ -35,6 +35,7 @@
 
 int init_simple_locking(struct simple_locking_s *locking)
 {
+    locking->flags=0;
     pthread_mutex_init(&locking->mutex, NULL);
     pthread_cond_init(&locking->cond, NULL);
     init_list_header(&locking->readlocks, SIMPLE_LIST_TYPE_EMPTY, NULL);
@@ -46,9 +47,12 @@ int init_simple_locking(struct simple_locking_s *locking)
 
 void clear_simple_locking(struct simple_locking_s *locking)
 {
+    struct list_element_s *list=NULL;
+
     pthread_mutex_destroy(&locking->mutex);
     pthread_cond_destroy(&locking->cond);
-    struct list_element_s *list=get_list_head(&locking->readlocks, SIMPLE_LIST_FLAG_REMOVE);
+
+    list=get_list_head(&locking->readlocks, SIMPLE_LIST_FLAG_REMOVE);
 
     while (list) {
 	struct simple_lock_s *lock=(struct simple_lock_s *) (((char *) list) - offsetof(struct simple_lock_s, list));
@@ -108,11 +112,10 @@ static int _simple_readlock(struct simple_lock_s *rlock)
     rlock->thread=pthread_self();
     pthread_mutex_lock(&locking->mutex);
 
+    /* if already part of list prevent doing that again */
     if ((rlock->flags & SIMPLE_LOCK_FLAG_LIST)==0) {
 
-	rlock->flags|=SIMPLE_LOCK_FLAG_WAITING;
 	while (locking->writers>0) pthread_cond_wait(&locking->cond, &locking->mutex);
-	rlock->flags-=SIMPLE_LOCK_FLAG_WAITING;
 	add_list_element_last(&locking->readlocks, &rlock->list);
 	rlock->flags|=SIMPLE_LOCK_FLAG_LIST;
 	locking->readers++;
@@ -125,7 +128,7 @@ static int _simple_readlock(struct simple_lock_s *rlock)
 
 }
 
-/* unlock a simple read lock */
+/* unlock a read lock */
 
 static int _simple_readunlock(struct simple_lock_s *rlock)
 {
@@ -133,6 +136,7 @@ static int _simple_readunlock(struct simple_lock_s *rlock)
 
     pthread_mutex_lock(&locking->mutex);
 
+    /* only when part of list remove it from list */
     if (rlock->flags & SIMPLE_LOCK_FLAG_LIST) {
 
 	remove_list_element(&rlock->list);
@@ -168,7 +172,7 @@ static int _simple_writelock(struct simple_lock_s *wlock)
 
 	/* only get the write lock when there are no readers and this wlock is the first */
 
-	while (locking->readers>0 && locking->writelocks.head!=&wlock->list) pthread_cond_wait(&locking->cond, &locking->mutex);
+	while ((locking->readers>0) && (list_element_is_first(&wlock->list)==-1)) pthread_cond_wait(&locking->cond, &locking->mutex);
 	wlock->flags |= SIMPLE_LOCK_FLAG_EFFECTIVE;
 
     }
@@ -184,17 +188,25 @@ static int _simple_writeunlock(struct simple_lock_s *wlock)
 {
     struct simple_locking_s *locking=wlock->locking;
 
+    pthread_mutex_lock(&locking->mutex);
+
     if (wlock->flags & SIMPLE_LOCK_FLAG_LIST) {
 
-	pthread_mutex_lock(&locking->mutex);
 	remove_list_element(&wlock->list);
 	locking->writers--;
-	pthread_cond_broadcast(&locking->cond);
-	pthread_mutex_unlock(&locking->mutex);
-
 	wlock->flags -= SIMPLE_LOCK_FLAG_LIST;
 
     }
+
+    if (wlock->flags & SIMPLE_LOCK_FLAG_UPGRADED) {
+
+	if (locking->flags & SIMPLE_LOCKING_FLAG_UPGRADE) locking->flags-=SIMPLE_LOCKING_FLAG_UPGRADE;
+	wlock->flags-=SIMPLE_LOCK_FLAG_UPGRADED;
+
+    }
+
+    pthread_cond_broadcast(&locking->cond);
+    pthread_mutex_unlock(&locking->mutex);
 
     if (wlock->flags & SIMPLE_LOCK_FLAG_EFFECTIVE) wlock->flags -= SIMPLE_LOCK_FLAG_EFFECTIVE;
 
@@ -241,6 +253,18 @@ static int _simple_upgrade_readlock(struct simple_lock_s *rlock)
 
     pthread_mutex_lock(&locking->mutex);
 
+    /* prevent two readers to upgrade at the same time */
+
+    if (locking->flags & SIMPLE_LOCKING_FLAG_UPGRADE) {
+
+	/* this readlock has to unlock hereafter, otherwise the upgrading lock will wait for this lock */
+	pthread_mutex_unlock(&locking->mutex);
+	return -1;
+
+    }
+
+    locking->flags|=SIMPLE_LOCKING_FLAG_UPGRADE;
+
     if (rlock->flags & SIMPLE_LOCK_FLAG_LIST) {
 
 	remove_list_element(&rlock->list);
@@ -248,6 +272,7 @@ static int _simple_upgrade_readlock(struct simple_lock_s *rlock)
 
     }
 
+    /* add as first in writers list, otherwise a deadlock is possible */
     add_list_element_first(&locking->writelocks, &rlock->list);
     locking->writers++;
 
@@ -256,12 +281,15 @@ static int _simple_upgrade_readlock(struct simple_lock_s *rlock)
     rlock->unlock=_simple_writeunlock;
     rlock->upgrade=_simple_upgrade_writelock;
     rlock->prelock=_simple_prewritelock;
+    rlock->flags |= SIMPLE_LOCK_FLAG_UPGRADED;
 
     pthread_cond_broadcast(&locking->cond);
 
-    while (locking->readers>0 && locking->writelocks.head!=&rlock->list) pthread_cond_wait(&locking->cond, &locking->mutex);
+    /* wait for no readers anymore (this writer is already the first) */
+    while (locking->readers>0) pthread_cond_wait(&locking->cond, &locking->mutex);
     rlock->flags |= SIMPLE_LOCK_FLAG_EFFECTIVE;
     pthread_mutex_unlock(&locking->mutex);
+
     return 0;
 
 }
